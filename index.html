@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🌾 Simulator Petani Padi</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f0fdf4; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    /* ═══════════════════════════ DATA ═══════════════════════════ */
+    const fmt  = (n) => "Rp " + Math.abs(Math.round(n)).toLocaleString("id-ID");
+    const LAND = 1;
+    const INITIAL_MONEY = 5_000_000;
+
+    const SEEDS = [
+      { id:"ir64",     name:"IR64",     costHa:150000, baseYield:5500, resist:0.50, tag:"Ekonomis",  tagBg:"#dcfce7", tagTx:"#14532d" },
+      { id:"ciherang", name:"Ciherang", costHa:220000, baseYield:6500, resist:0.65, tag:"Populer",   tagBg:"#fef3c7", tagTx:"#92400e" },
+      { id:"hybrid",   name:"Hibrida",  costHa:380000, baseYield:8200, resist:0.82, tag:"Unggul",    tagBg:"#ede9fe", tagTx:"#5b21b6" },
+    ];
+    const PREPS = [
+      { id:"manual",  name:"Cangkul Manual", cost:500000, hBonus:0,  desc:"Hemat biaya, cocok untuk anggaran terbatas" },
+      { id:"tractor", name:"Traktor",        cost:900000, hBonus:10, desc:"Tanah lebih gembur — +10 kesehatan awal" },
+    ];
+    const FERTS = [
+      { id:"urea",    name:"Urea",    costHa:130000, yPlus:400, hPlus:5,  emoji:"💊" },
+      { id:"npk",     name:"NPK",     costHa:210000, yPlus:600, hPlus:8,  emoji:"✨" },
+      { id:"organic", name:"Organik", costHa:90000,  yPlus:250, hPlus:12, emoji:"🌿" },
+    ];
+    const SPRAYS = [
+      { id:"basic",   name:"Pestisida Biasa",   costHa:90000,  eff:0.65 },
+      { id:"premium", name:"Pestisida Premium", costHa:200000, eff:0.93 },
+    ];
+    const EVENTS = [
+      { id:"wereng",     name:"Serangan Wereng",  emoji:"🦗", hDmg:22, yDmg:900,  kind:"pest",    fix:{ costHa:100000, name:"Semprot Pestisida",   useSprays:true  } },
+      { id:"tikus",      name:"Serangan Tikus",   emoji:"🐀", hDmg:16, yDmg:700,  kind:"pest",    fix:{ costHa:80000,  name:"Pasang Perangkap",     useSprays:false } },
+      { id:"blast",      name:"Penyakit Blast",   emoji:"🍄", hDmg:28, yDmg:1100, kind:"disease", fix:{ costHa:180000, name:"Semprot Fungisida",     useSprays:true  } },
+      { id:"banjir",     name:"Banjir",           emoji:"🌊", hDmg:38, yDmg:1600, kind:"weather", fix:null },
+      { id:"kekeringan", name:"Kekeringan",       emoji:"☀️", hDmg:30, yDmg:1200, kind:"weather", fix:{ costHa:220000, name:"Pompakan Air Irigasi",  useSprays:false } },
+      { id:"angin",      name:"Angin Kencang",    emoji:"🌬️", hDmg:12, yDmg:500,  kind:"weather", fix:null },
+    ];
+    const GOOD_EVENTS = [
+      { name:"Cuaca Cerah",        emoji:"🌤️", hBon:8,  yBon:300 },
+      { name:"Hujan Merata",        emoji:"🌧️", hBon:10, yBon:400 },
+      { name:"Tanah Sangat Subur",  emoji:"🌱", hBon:6,  yBon:250 },
+    ];
+    const HARVEST_METHODS = [
+      { id:"manual",  name:"Manual (Buruh Tani)", costHa:400000, eff:0.88, desc:"Lebih hemat" },
+      { id:"combine", name:"Mesin Combine",       costHa:700000, eff:0.96, desc:"Cepat & efisien" },
+    ];
+    const SELL_OPTS = [
+      { id:"t", name:"Tengkulak",  mod:1.00, desc:"Harga pasar saat ini",  badge:null,      badgeBg:null },
+      { id:"b", name:"BULOG",      mod:1.08, desc:"Harga premium +8%",     badge:"Terbaik", badgeBg:"#16a34a" },
+      { id:"c", name:"Jual Cepat", mod:0.85, desc:"Diskon 15%, uang cair", badge:null,      badgeBg:null },
+    ];
+    const MARKET = [4800,5000,5200,5500,5800,6000,6200,4500,5300,5700,5100,5900,6500];
+
+    /* ═══════════════════════════ FIELD GRID ═══════════════════════════ */
+    function FieldGrid({ phase, mWeek, health }) {
+      const cells = useMemo(() => {
+        return Array.from({ length: 32 }, (_, i) => {
+          const r = Math.floor(i / 8), c = i % 8;
+          const n = ((r * 7 + c * 13 + Math.round(health)) % 17) / 17;
+          const h = health / 100;
+          if (phase === "landPrep" || phase === "seedSelect") {
+            const v = 130 + Math.floor(n * 30);
+            return `rgb(${v},${Math.floor(v*.68)},${Math.floor(v*.38)})`;
+          }
+          if (phase === "planting") {
+            return `rgb(${35+Math.floor(n*15)},${90+Math.floor(n*25)},${155+Math.floor(n*20)})`;
+          }
+          if (phase === "maintenance" || phase === "harvest") {
+            const stage = mWeek < 3 ? "early" : mWeek < 6 ? "mid" : "late";
+            const dmg = n > Math.max(0.04, h * 0.92);
+            if (stage==="early") return dmg ? `rgb(148,98,48)` : `rgb(${30+Math.floor(n*25)},${155+Math.floor(n*40)},${40+Math.floor(n*20)})`;
+            if (stage==="mid")   return dmg ? `rgb(128,88,38)` : `rgb(${20+Math.floor(n*20)},${112+Math.floor(n*28)},25)`;
+            return dmg ? `rgb(118,84,34)` : `rgb(${195+Math.floor(n*40)},${152+Math.floor(n*28)},${15+Math.floor(n*28)})`;
+          }
+          if (phase === "selling") {
+            const v = 165 + Math.floor(n * 35);
+            return `rgb(${Math.floor(v*.78)},${Math.floor(v*.63)},${Math.floor(v*.48)})`;
+          }
+          return "#aaa";
+        });
+      }, [phase, mWeek, Math.round(health / 5) * 5]);
+
+      return (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(8,1fr)", gap:"2px", borderRadius:"8px", overflow:"hidden", aspectRatio:"2/1" }}>
+          {cells.map((c, i) => <div key={i} style={{ background:c, transition:"background 0.9s ease" }} />)}
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════ SHARED COMPONENTS ═══════════════════════════ */
+    function Btn({ onClick, disabled, children, variant="green", full=false }) {
+      const bg = { green:"#16a34a", blue:"#2563eb", amber:"#d97706", red:"#dc2626", gray:"#6b7280", purple:"#7c3aed" };
+      return (
+        <button onClick={onClick} disabled={disabled}
+          style={{ background:disabled?"#e5e7eb":bg[variant], color:disabled?"#9ca3af":"white", border:"none",
+            borderRadius:"8px", padding:"10px 14px", fontSize:"13px", fontWeight:"600",
+            cursor:disabled?"default":"pointer", width:full?"100%":"auto", transition:"filter .15s" }}
+          onMouseOver={e => { if (!disabled) e.target.style.filter="brightness(.88)"; }}
+          onMouseOut={e  => { e.target.style.filter="none"; }}
+        >{children}</button>
+      );
+    }
+
+    function SelCard({ children, onClick, border="#86efac", bg="#f0fdf4", hover="#dcfce7" }) {
+      const [hov, setHov] = useState(false);
+      return (
+        <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+          style={{ background:hov?hover:bg, border:`1.5px solid ${hov?border.replace("a","6"):border}`,
+            borderRadius:"10px", padding:"12px 14px", marginBottom:"8px",
+            cursor:"pointer", transition:"background .15s", position:"relative" }}>
+          {children}
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════ MAIN GAME ═══════════════════════════ */
+    function FarmSim() {
+      const [screen,    setScreen]    = useState("intro");
+      const [season,    setSeason]    = useState(1);
+      const [week,      setWeek]      = useState(1);
+      const [money,     setMoney]     = useState(INITIAL_MONEY);
+      const [spent,     setSpent]     = useState(0);
+      const [phase,     setPhase]     = useState("landPrep");
+      const [mWeek,     setMWeek]     = useState(0);
+      const [health,    setHealth]    = useState(100);
+      const [seedId,    setSeedId]    = useState(null);
+      const [baseYield, setBaseYield] = useState(0);
+      const [fertDone,  setFertDone]  = useState(false);
+      const [badEv,     setBadEv]     = useState(null);
+      const [evDone,    setEvDone]    = useState(true);
+      const [mktPrice,  setMktPrice]  = useState(5200);
+      const [harvestKg, setHarvestKg] = useState(0);
+      const [history,   setHistory]   = useState([]);
+      const [log,       setLog]       = useState([]);
+
+      const seed      = SEEDS.find(s => s.id === seedId);
+      const estYield  = Math.max(500, Math.round((baseYield - (100 - health) * 30) * LAND));
+      const hColor    = health > 65 ? "#22c55e" : health > 35 ? "#f59e0b" : "#ef4444";
+      const push      = (msg, t="i") => setLog(l => [{ msg, t, k:Math.random() }, ...l].slice(0, 10));
+      const pay       = (cost) => { setMoney(m => m - cost); setSpent(s => s + cost); };
+
+      const rollEvent = () => {
+        setBadEv(null); setEvDone(true); setFertDone(false);
+        setMktPrice(MARKET[Math.floor(Math.random() * MARKET.length)]);
+        const r = Math.random();
+        if (r < 0.40) {
+          const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+          setBadEv(ev); setEvDone(false);
+          push(`⚠️ ${ev.emoji} ${ev.name} menyerang sawah!`, "w");
+        } else if (r < 0.62) {
+          const ge = GOOD_EVENTS[Math.floor(Math.random() * GOOD_EVENTS.length)];
+          setHealth(h => Math.min(100, h + ge.hBon));
+          setBaseYield(y => y + ge.yBon);
+          push(`${ge.emoji} ${ge.name}! Tanaman makin subur.`, "g");
+        } else {
+          push("🌿 Minggu tenang, tidak ada kejadian.", "i");
+        }
+      };
+
+      const doLandPrep = (id) => {
+        const p = PREPS.find(x => x.id === id);
+        if (money < p.cost) { push("Modal tidak cukup!", "e"); return; }
+        pay(p.cost);
+        setHealth(Math.min(100, 100 + p.hBonus));
+        push(`🚜 ${p.name} selesai. Lahan siap tanam!`, "g");
+        push(`💸 Biaya: ${fmt(p.cost)}`, "c");
+        setPhase("seedSelect");
+      };
+
+      const doBuySeed = (id) => {
+        const s = SEEDS.find(x => x.id === id);
+        const cost = s.costHa * LAND;
+        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
+        pay(cost); setSeedId(id); setBaseYield(s.baseYield);
+        push(`🌾 Benih ${s.name} dibeli — potensi ${s.baseYield.toLocaleString()} kg/ha.`, "g");
+        push(`💸 Biaya: ${fmt(cost)}`, "c");
+        setPhase("planting");
+      };
+
+      const doPlant = () => {
+        setPhase("maintenance"); setMWeek(0); setWeek(5);
+        push("🌱 Padi berhasil ditanam! Fase perawatan dimulai.", "g");
+        rollEvent();
+      };
+
+      const doFertilize = (id) => {
+        const f = FERTS.find(x => x.id === id);
+        const cost = f.costHa * LAND;
+        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
+        pay(cost);
+        setBaseYield(y => y + f.yPlus);
+        setHealth(h => Math.min(100, h + f.hPlus));
+        setFertDone(true);
+        push(`${f.emoji} ${f.name} diaplikasikan (+${f.yPlus} kg, +${f.hPlus} kesehatan).`, "g");
+        push(`💸 Biaya: ${fmt(cost)}`, "c");
+      };
+
+      const doSpray = (id) => {
+        const sp = SPRAYS.find(x => x.id === id);
+        const cost = sp.costHa * LAND;
+        if (money < cost || !badEv) { if (money < cost) push("Modal tidak cukup!", "e"); return; }
+        pay(cost);
+        const eff = Math.min(1, sp.eff + (seed ? seed.resist * 0.15 : 0));
+        setHealth(h => Math.max(5, h - Math.round(badEv.hDmg * (1 - eff))));
+        setBaseYield(y => Math.max(500, y - Math.round(badEv.yDmg * (1 - eff))));
+        setEvDone(true);
+        push(`✅ ${badEv.name} ditangani (efektivitas ${Math.round(eff * 100)}%).`, "g");
+        push(`💸 Biaya: ${fmt(cost)}`, "c");
+      };
+
+      const doFix = () => {
+        if (!badEv?.fix || badEv.fix.useSprays) return;
+        const cost = badEv.fix.costHa * LAND;
+        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
+        pay(cost);
+        setHealth(h => Math.max(5, h - Math.round(badEv.hDmg * 0.2)));
+        setBaseYield(y => Math.max(500, y - Math.round(badEv.yDmg * 0.2)));
+        setEvDone(true);
+        push(`✅ ${badEv.fix.name} berhasil. Kerusakan diminimalkan.`, "g");
+        push(`💸 Biaya: ${fmt(cost)}`, "c");
+      };
+
+      const doIgnore = () => {
+        if (badEv) {
+          setHealth(h => Math.max(5, h - badEv.hDmg));
+          setBaseYield(y => Math.max(500, y - badEv.yDmg));
+          push(`⚠️ ${badEv.name} diabaikan — kerusakan signifikan terjadi!`, "w");
+        }
+        setEvDone(true);
+      };
+
+      const doNextWeek = () => {
+        if (mWeek >= 7) {
+          setPhase("harvest"); setWeek(13);
+          push("🌾 Padi sudah matang! Saatnya panen.", "g");
+        } else {
+          setMWeek(w => w + 1); setWeek(w => w + 1);
+          rollEvent();
+        }
+      };
+
+      const doHarvest = (id) => {
+        const hm = HARVEST_METHODS.find(x => x.id === id);
+        const cost = hm.costHa * LAND;
+        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
+        pay(cost);
+        const kg = Math.round(estYield * hm.eff);
+        setHarvestKg(kg); setPhase("selling");
+        push(`🌾 Panen selesai! ${kg.toLocaleString()} kg gabah kering.`, "g");
+        push(`💸 Biaya panen: ${fmt(cost)}`, "c");
+      };
+
+      const doSell = (mod) => {
+        const price   = Math.round(mktPrice * mod);
+        const revenue = harvestKg * price;
+        const profit  = revenue - spent;
+        const newMoney = money + revenue;
+        setHistory(h => [...h, { season, kg:harvestKg, price, revenue, profit, finalMoney:newMoney }]);
+        push(`💰 ${harvestKg.toLocaleString()} kg × ${fmt(price)}/kg = ${fmt(revenue)}`, "g");
+        push(`📊 Laba musim ini: ${fmt(profit)}`, profit > 0 ? "g" : "w");
+        if (newMoney < 500000) { setMoney(newMoney); setScreen("over"); return; }
+        const ns = season + 1;
+        setSeason(ns); setWeek(1); setPhase("landPrep"); setMWeek(0);
+        setHealth(100); setSeedId(null); setBaseYield(0); setFertDone(false);
+        setBadEv(null); setEvDone(true); setHarvestKg(0); setSpent(0); setMoney(newMoney);
+        push(`🌱 Musim ${ns} dimulai! Modal: ${fmt(newMoney)}`, "g");
+      };
+
+      const PHASE_LABELS = {
+        landPrep:"Persiapan Lahan", seedSelect:"Pilih Varietas Benih", planting:"Siap Tanam",
+        maintenance:`Perawatan — Minggu ${mWeek+1} dari 8`, harvest:"Panen Raya", selling:"Jual Gabah",
+      };
+      const PHASE_STEPS = ["landPrep","seedSelect","planting","maintenance","harvest","selling"];
+      const phaseIdx    = PHASE_STEPS.indexOf(phase);
+      const logColors   = { i:"#9ca3af", g:"#4ade80", w:"#fbbf24", e:"#f87171", c:"#fb923c" };
+      const showCrop    = ["maintenance","harvest","selling"].includes(phase);
+
+      /* ── INTRO ── */
+      if (screen === "intro") return (
+        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#052e16,#14532d,#166534)",
+          display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div style={{ background:"white", borderRadius:"20px", padding:"36px 28px",
+            maxWidth:"460px", width:"100%", boxShadow:"0 20px 48px rgba(0,0,0,.32)" }}>
+            <div style={{ textAlign:"center", marginBottom:"24px" }}>
+              <div style={{ fontSize:"60px", marginBottom:"8px" }}>🌾</div>
+              <h1 style={{ margin:"0 0 8px", fontSize:"26px", fontWeight:"800", color:"#14532d", letterSpacing:"-.5px" }}>
+                Simulator Petani Padi
+              </h1>
+              <p style={{ margin:0, color:"#6b7280", fontSize:"14px", lineHeight:"1.7" }}>
+                Jadilah manajer usaha tani! Kelola lahan sawah 1 hektar, pilih strategi terbaik,
+                hadapi hama &amp; cuaca, dan raih keuntungan maksimal.
+              </p>
+            </div>
+            <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:"12px",
+              padding:"14px", marginBottom:"16px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px" }}>
+              {[["💰 Modal Awal",fmt(INITIAL_MONEY)],["🌾 Lahan",`${LAND} Hektar`],["🌱 Komoditas","Padi"],["⏱️ Per Musim","~16 Minggu"]].map(([l,v]) => (
+                <div key={l} style={{ background:"white", borderRadius:"8px", padding:"10px 12px", border:"0.5px solid #d1fae5" }}>
+                  <div style={{ fontSize:"11px", color:"#6b7280" }}>{l}</div>
+                  <div style={{ fontSize:"15px", fontWeight:"700", color:"#14532d" }}>{v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ background:"#fefce8", border:"1px solid #fef08a", borderRadius:"10px",
+              padding:"12px 14px", marginBottom:"20px", fontSize:"13px", color:"#713f12", lineHeight:"1.6" }}>
+              ⚠️ <strong>Tantangan:</strong> Hama wereng, banjir, kekeringan, dan fluktuasi harga gabah
+              akan menguji kemampuan manajemen Anda!
+            </div>
+            <button onClick={() => setScreen("game")}
+              style={{ background:"#16a34a", color:"white", border:"none", borderRadius:"12px",
+                padding:"16px", width:"100%", fontSize:"16px", fontWeight:"700", cursor:"pointer" }}>
+              🚜 Mulai Bertani!
+            </button>
+          </div>
+        </div>
+      );
+
+      /* ── GAME OVER ── */
+      if (screen === "over") return (
+        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#450a0a,#7f1d1d)",
+          display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div style={{ background:"white", borderRadius:"20px", padding:"36px 28px",
+            maxWidth:"460px", width:"100%", boxShadow:"0 20px 48px rgba(0,0,0,.32)" }}>
+            <div style={{ textAlign:"center", marginBottom:"20px" }}>
+              <div style={{ fontSize:"56px", marginBottom:"8px" }}>💸</div>
+              <h1 style={{ margin:"0 0 8px", fontSize:"22px", fontWeight:"800", color:"#991b1b" }}>Modal Habis!</h1>
+              <p style={{ margin:0, color:"#6b7280", fontSize:"14px", lineHeight:"1.6" }}>
+                Usaha tani Anda bangkrut. Kelola biaya lebih cermat dan tangani hama sejak dini!
+              </p>
+            </div>
+            {history.length > 0 && (
+              <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:"12px",
+                padding:"14px", marginBottom:"20px" }}>
+                <div style={{ fontWeight:"700", fontSize:"13px", color:"#991b1b", marginBottom:"10px" }}>
+                  📊 Riwayat Panen:
+                </div>
+                {history.map((h, i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:"13px",
+                    padding:"5px 0", borderBottom:i<history.length-1?"0.5px solid #fecaca":"none", color:"#374151" }}>
+                    <span>Musim {h.season}: {h.kg.toLocaleString()} kg</span>
+                    <span style={{ fontWeight:"600", color:h.profit>0?"#16a34a":"#dc2626" }}>
+                      {h.profit > 0 ? "+" : ""}{fmt(h.profit)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => {
+              setScreen("game"); setMoney(INITIAL_MONEY); setSeason(1); setWeek(1); setSpent(0);
+              setPhase("landPrep"); setMWeek(0); setHealth(100); setSeedId(null); setBaseYield(0);
+              setFertDone(false); setBadEv(null); setEvDone(true); setHarvestKg(0); setHistory([]); setLog([]);
+            }} style={{ background:"#dc2626", color:"white", border:"none", borderRadius:"12px",
+              padding:"14px", width:"100%", fontSize:"15px", fontWeight:"700", cursor:"pointer" }}>
+              🔄 Mulai Ulang
+            </button>
+          </div>
+        </div>
+      );
+
+      /* ── MAIN GAME ── */
+      return (
+        <div style={{ background:"#f0fdf4", minHeight:"100vh", maxWidth:"700px", margin:"0 auto", paddingBottom:"28px" }}>
+
+          {/* HEADER */}
+          <div style={{ background:"linear-gradient(135deg,#14532d,#15803d)", padding:"16px 20px 18px", color:"white" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"14px" }}>
+              <div>
+                <div style={{ fontSize:"11px", opacity:.7, textTransform:"uppercase", letterSpacing:".6px" }}>
+                  Simulator Petani Padi
+                </div>
+                <div style={{ fontSize:"20px", fontWeight:"800", marginTop:"2px" }}>
+                  Musim {season} — Minggu {week}
+                </div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:"11px", opacity:.7 }}>Modal</div>
+                <div style={{ fontSize:"22px", fontWeight:"800",
+                  color: money>2000000?"#86efac":money>800000?"#fde68a":"#fca5a5" }}>
+                  {fmt(money)}
+                </div>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:"4px" }}>
+              {["Lahan","Benih","Tanam","Rawat","Panen","Jual"].map((l, i) => (
+                <div key={l} style={{ flex:1, textAlign:"center" }}>
+                  <div style={{ height:"3px", borderRadius:"2px", marginBottom:"4px", transition:"background .3s",
+                    background: i<=phaseIdx ? "#86efac" : "rgba(255,255,255,.25)" }} />
+                  <div style={{ fontSize:"10px", opacity:i<=phaseIdx?1:.5, fontWeight:i===phaseIdx?700:400 }}>{l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* FIELD + STATUS */}
+          <div style={{ margin:"12px 12px 0", background:"white", borderRadius:"14px",
+            border:"0.5px solid #e5e7eb", padding:"14px", display:"flex", gap:"14px", alignItems:"stretch" }}>
+            <div style={{ flex:"0 0 46%" }}>
+              <FieldGrid phase={phase} mWeek={mWeek} health={health} />
+              <div style={{ textAlign:"center", fontSize:"10px", color:"#9ca3af", marginTop:"6px" }}>
+                {phase==="landPrep"||phase==="seedSelect" ? "🟫 Lahan belum ditanami"
+                  : phase==="planting"   ? "🔵 Sawah digenangi air"
+                  : mWeek<3             ? "🟢 Bibit tumbuh"
+                  : mWeek<6             ? "🌿 Fase vegetatif"
+                  : phase==="selling"   ? "📦 Selesai panen"
+                  : "🌾 Padi matang"}
+              </div>
+            </div>
+            <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", gap:"8px" }}>
+              <div style={{ fontSize:"13px", fontWeight:"700", color:"#14532d" }}>
+                📍 {PHASE_LABELS[phase]}
+              </div>
+              {showCrop ? (
+                <>
+                  <div>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:"12px", color:"#6b7280", marginBottom:"4px" }}>
+                      <span>❤️ Kesehatan Tanaman</span>
+                      <span style={{ fontWeight:"700", color:hColor }}>{health}%</span>
+                    </div>
+                    <div style={{ background:"#e5e7eb", borderRadius:"999px", height:"6px" }}>
+                      <div style={{ background:hColor, borderRadius:"999px", height:"6px",
+                        width:`${health}%`, transition:"width .5s,background .3s" }} />
+                    </div>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px" }}>
+                    <div style={{ background:"#f0fdf4", borderRadius:"8px", padding:"7px 10px" }}>
+                      <div style={{ fontSize:"10px", color:"#6b7280" }}>Est. Panen</div>
+                      <div style={{ fontSize:"14px", fontWeight:"700", color:"#14532d" }}>{estYield.toLocaleString()} kg</div>
+                    </div>
+                    <div style={{ background:"#fffbeb", borderRadius:"8px", padding:"7px 10px" }}>
+                      <div style={{ fontSize:"10px", color:"#6b7280" }}>Harga Gabah</div>
+                      <div style={{ fontSize:"14px", fontWeight:"700", color:"#92400e" }}>{fmt(mktPrice)}/kg</div>
+                    </div>
+                  </div>
+                  <div style={{ background:"#f9fafb", borderRadius:"8px", padding:"7px 10px",
+                    fontSize:"11px", display:"flex", justifyContent:"space-between" }}>
+                    <span style={{ color:"#6b7280" }}>💸 <span style={{ color:"#ef4444", fontWeight:"600" }}>{fmt(spent)}</span></span>
+                    <span style={{ color:"#6b7280" }}>📈 <span style={{
+                      color: estYield*mktPrice>spent ? "#16a34a" : "#ef4444", fontWeight:"600" }}>
+                      {fmt(estYield * mktPrice - spent)}
+                    </span></span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize:"13px", color:"#6b7280", lineHeight:"1.6", flex:1, display:"flex", alignItems:"center" }}>
+                  {phase==="landPrep"   && "Siapkan lahan untuk musim tanam baru. Pilih metode pengolahan yang sesuai anggaran."}
+                  {phase==="seedSelect" && "Lahan siap! Pilih varietas benih. Varietas unggul = hasil lebih tinggi."}
+                  {phase==="planting"   && `Benih ${seed?.name||"..."} siap ditanam di ${LAND} ha.`}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* EVENT ALERT */}
+          {badEv && !evDone && (
+            <div style={{ margin:"10px 12px 0", background:"#fef3c7", border:"2px solid #f59e0b",
+              borderRadius:"14px", padding:"14px" }}>
+              <div style={{ fontWeight:"700", color:"#92400e", fontSize:"16px", marginBottom:"6px" }}>
+                {badEv.emoji} {badEv.name}!
+              </div>
+              <div style={{ fontSize:"13px", color:"#78350f", marginBottom:"12px" }}>
+                Risiko jika diabaikan: <strong>-{badEv.hDmg}% kesehatan</strong> dan <strong>-{badEv.yDmg.toLocaleString()} kg</strong> potensi panen.
+              </div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
+                {badEv.fix?.useSprays && SPRAYS.map(sp => (
+                  <Btn key={sp.id} onClick={() => doSpray(sp.id)}>
+                    {sp.name} ({fmt(sp.costHa * LAND)}) · {Math.round(sp.eff * 100)}%
+                  </Btn>
+                ))}
+                {badEv.fix && !badEv.fix.useSprays && (
+                  <Btn onClick={doFix} variant="blue">
+                    {badEv.fix.name} ({fmt(badEv.fix.costHa * LAND)})
+                  </Btn>
+                )}
+                <Btn onClick={doIgnore} variant="gray">
+                  Abaikan{!badEv.fix ? " (tak bisa ditangani)" : ""}
+                </Btn>
+              </div>
+            </div>
+          )}
+
+          {/* MAIN ACTION PANEL */}
+          <div style={{ margin:"10px 12px 0", background:"white", borderRadius:"14px",
+            border:"0.5px solid #e5e7eb", padding:"16px" }}>
+
+            {/* LAND PREP */}
+            {phase === "landPrep" && <>
+              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>🚜 Pengolahan Lahan</div>
+              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
+                Siapkan lahan {LAND} hektar sebelum musim tanam. Pilih metode sesuai anggaran.
+              </p>
+              {PREPS.map(p => (
+                <SelCard key={p.id} onClick={() => doLandPrep(p.id)}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span style={{ fontWeight:"700", color:"#14532d", fontSize:"14px" }}>{p.name}</span>
+                    <span style={{ background:"#14532d", color:"white", borderRadius:"6px",
+                      padding:"2px 10px", fontSize:"12px", fontWeight:"600" }}>{fmt(p.cost)}</span>
+                  </div>
+                  <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"3px" }}>{p.desc}</div>
+                </SelCard>
+              ))}
+            </>}
+
+            {/* SEED SELECT */}
+            {phase === "seedSelect" && <>
+              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>🌾 Pilih Varietas Benih Padi</div>
+              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
+                Biaya per hektar. Varietas unggul memberikan hasil lebih tinggi dan ketahanan hama lebih baik.
+              </p>
+              {SEEDS.map(s => (
+                <SelCard key={s.id} onClick={() => doBuySeed(s.id)}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                      <span style={{ fontWeight:"700", color:"#14532d", fontSize:"14px" }}>{s.name}</span>
+                      <span style={{ background:s.tagBg, color:s.tagTx, borderRadius:"4px",
+                        padding:"1px 7px", fontSize:"11px", fontWeight:"700" }}>{s.tag}</span>
+                    </div>
+                    <span style={{ fontWeight:"600", color:"#374151", fontSize:"13px" }}>{fmt(s.costHa)}/ha</span>
+                  </div>
+                  <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"4px" }}>
+                    Potensi: <strong>{s.baseYield.toLocaleString()} kg/ha</strong> · Ketahanan hama: <strong>{Math.round(s.resist * 100)}%</strong>
+                  </div>
+                </SelCard>
+              ))}
+            </>}
+
+            {/* PLANTING */}
+            {phase === "planting" && (
+              <div style={{ textAlign:"center", padding:"20px 0" }}>
+                <div style={{ fontSize:"52px", marginBottom:"10px" }}>🌱</div>
+                <div style={{ fontWeight:"700", fontSize:"16px", color:"#14532d", marginBottom:"6px" }}>Lahan Siap Tanam!</div>
+                <p style={{ color:"#6b7280", fontSize:"14px", margin:"0 0 20px", lineHeight:"1.6" }}>
+                  Varietas <strong>{seed?.name}</strong> akan ditanam di {LAND} ha.<br />
+                  Estimasi potensi awal: <strong>{baseYield.toLocaleString()} kg</strong>
+                </p>
+                <Btn onClick={doPlant}>🌱 Tanam Sekarang!</Btn>
+              </div>
+            )}
+
+            {/* MAINTENANCE */}
+            {phase === "maintenance" && <>
+              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>
+                🌿 Perawatan Minggu {mWeek + 1} / 8
+              </div>
+              <div style={{ background:"#e5e7eb", borderRadius:"999px", height:"5px", margin:"8px 0 14px" }}>
+                <div style={{ background:"#16a34a", borderRadius:"999px", height:"5px",
+                  width:`${((mWeek + 1) / 8) * 100}%`, transition:"width .4s" }} />
+              </div>
+              <div style={{ marginBottom:"14px" }}>
+                <div style={{ fontSize:"13px", fontWeight:"600", color:"#374151", marginBottom:"8px" }}>
+                  💊 Pemupukan {fertDone ? "✅ Sudah dilakukan" : "(opsional, dianjurkan)"}
+                </div>
+                {!fertDone && (
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"8px" }}>
+                    {FERTS.map(f => (
+                      <div key={f.id} onClick={() => doFertilize(f.id)}
+                        style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:"8px",
+                          padding:"10px 8px", cursor:"pointer", textAlign:"center", transition:"background .15s" }}
+                        onMouseOver={e => e.currentTarget.style.background="#dcfce7"}
+                        onMouseOut={e  => e.currentTarget.style.background="#f0fdf4"}>
+                        <div style={{ fontWeight:"700", fontSize:"13px", color:"#14532d" }}>{f.emoji} {f.name}</div>
+                        <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"2px" }}>{fmt(f.costHa * LAND)}</div>
+                        <div style={{ fontSize:"11px", color:"#16a34a", marginTop:"2px" }}>+{f.yPlus} kg · +{f.hPlus}❤️</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Btn onClick={doNextWeek} disabled={!evDone} variant={evDone?"blue":"gray"} full>
+                {!evDone
+                  ? "⚠️ Tangani kejadian terlebih dahulu"
+                  : mWeek < 7
+                    ? "⏩ Lanjut ke Minggu Berikutnya"
+                    : "🌾 Padi Sudah Matang — Panen Sekarang!"}
+              </Btn>
+            </>}
+
+            {/* HARVEST */}
+            {phase === "harvest" && <>
+              <div style={{ fontWeight:"700", fontSize:"15px", color:"#92400e", marginBottom:"4px" }}>🌾 Panen Raya!</div>
+              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
+                Estimasi hasil: <strong>{estYield.toLocaleString()} kg</strong>. Pilih metode panen:
+              </p>
+              {HARVEST_METHODS.map(hm => (
+                <SelCard key={hm.id} onClick={() => doHarvest(hm.id)}
+                  border="#fcd34d" bg="#fffbeb" hover="#fef3c7">
+                  <div style={{ display:"flex", justifyContent:"space-between" }}>
+                    <span style={{ fontWeight:"700", color:"#92400e", fontSize:"14px" }}>{hm.name}</span>
+                    <span style={{ fontSize:"12px", color:"#6b7280" }}>{fmt(hm.costHa * LAND)}</span>
+                  </div>
+                  <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"3px" }}>
+                    {hm.desc} · Efisiensi {Math.round(hm.eff * 100)}% → hasil <strong>{Math.round(estYield * hm.eff).toLocaleString()} kg</strong>
+                  </div>
+                </SelCard>
+              ))}
+            </>}
+
+            {/* SELLING */}
+            {phase === "selling" && <>
+              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>💰 Jual Hasil Panen</div>
+              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
+                <strong>{harvestKg.toLocaleString()} kg</strong> gabah siap jual · Harga pasar: <strong>{fmt(mktPrice)}/kg</strong>
+              </p>
+              {SELL_OPTS.map(so => {
+                const price   = Math.round(mktPrice * so.mod);
+                const total   = harvestKg * price;
+                const profit  = total - spent;
+                return (
+                  <SelCard key={so.id} onClick={() => doSell(so.mod)}
+                    border="#c4b5fd" bg="#f5f3ff" hover="#ede9fe">
+                    {so.badge && (
+                      <span style={{ position:"absolute", top:"10px", right:"12px",
+                        background:so.badgeBg, color:"white", borderRadius:"4px",
+                        padding:"2px 7px", fontSize:"11px", fontWeight:"700" }}>{so.badge}</span>
+                    )}
+                    <div style={{ fontWeight:"700", color:"#5b21b6", fontSize:"14px" }}>{so.name}</div>
+                    <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"2px" }}>
+                      {so.desc} · {fmt(price)}/kg
+                    </div>
+                    <div style={{ marginTop:"6px", display:"flex", gap:"14px", fontSize:"12px" }}>
+                      <span>Total: <strong>{fmt(total)}</strong></span>
+                      <span style={{ color:profit>0?"#16a34a":"#dc2626", fontWeight:"700" }}>
+                        Laba: {profit > 0 ? "+" : ""}{fmt(profit)}
+                      </span>
+                    </div>
+                  </SelCard>
+                );
+              })}
+              {history.length > 0 && (
+                <div style={{ marginTop:"14px", background:"#f9fafb", borderRadius:"10px",
+                  padding:"12px", fontSize:"12px", color:"#374151" }}>
+                  <strong style={{ fontSize:"13px" }}>📊 Riwayat Musim:</strong>
+                  {history.map((h, i) => (
+                    <div key={i} style={{ display:"flex", justifyContent:"space-between", marginTop:"5px",
+                      padding:"4px 0", borderTop:"0.5px solid #e5e7eb" }}>
+                      <span>Musim {h.season}: {h.kg.toLocaleString()} kg</span>
+                      <span style={{ fontWeight:"700", color:h.profit>0?"#16a34a":"#dc2626" }}>
+                        {h.profit > 0 ? "+" : ""}{fmt(h.profit)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>}
+          </div>
+
+          {/* ACTIVITY LOG */}
+          <div style={{ margin:"10px 12px 0", background:"#0f172a", borderRadius:"14px", padding:"12px 16px" }}>
+            <div style={{ fontSize:"11px", fontWeight:"600", color:"#64748b", marginBottom:"8px",
+              textTransform:"uppercase", letterSpacing:".6px" }}>Log Aktivitas</div>
+            {log.length === 0
+              ? <div style={{ color:"#475569", fontSize:"13px" }}>Belum ada aktivitas...</div>
+              : log.map(l => (
+                <div key={l.k} style={{ color:logColors[l.t], fontSize:"13px", marginBottom:"3px" }}>{l.msg}</div>
+              ))
+            }
+          </div>
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════ RENDER ═══════════════════════════ */
+    ReactDOM.createRoot(document.getElementById("root")).render(<FarmSim />);
+  </script>
+</body>
+</html>
