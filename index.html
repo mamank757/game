@@ -1,678 +1,1094 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>🌾 Simulator Petani Padi</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🌾 Simulator Petani Padi — Ilmiah</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f0fdf4; }
-  </style>
+  <style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,-apple-system,sans-serif;background:#f0fdf4}</style>
 </head>
 <body>
-  <div id="root"></div>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+const fmt = n => "Rp " + Math.abs(Math.round(n)).toLocaleString("id-ID");
+const LAND = 1;
+const INIT_MONEY = 6_000_000;
+const PRICES = [4800,5000,5200,5500,5800,6000,6200,4500,5300,5700,5100,5900,6500];
 
-  <script type="text/babel">
-    const { useState, useMemo } = React;
+/* ═══════════════════════ AGRONOMIC DATA ═══════════════════════ */
 
-    /* ═══════════════════════════ DATA ═══════════════════════════ */
-    const fmt  = (n) => "Rp " + Math.abs(Math.round(n)).toLocaleString("id-ID");
-    const LAND = 1;
-    const INITIAL_MONEY = 5_000_000;
+// 12 weeks growing + harvest
+function getStage(w) {
+  if (w <= 3)  return "veg_awal";     // vegetatif awal: anakan
+  if (w <= 6)  return "veg_akhir";   // vegetatif akhir: anakan max
+  if (w <= 8)  return "reproduktif"; // primordia: bakal bunga
+  if (w === 9) return "pembungaan";  // PEMBUNGAAN — super kritis
+  if (w <= 11) return "pengisian";   // pengisian bulir
+  return "pemasakan";                // pemasakan: persiapan panen
+}
 
-    const SEEDS = [
-      { id:"ir64",     name:"IR64",     costHa:150000, baseYield:5500, resist:0.50, tag:"Ekonomis",  tagBg:"#dcfce7", tagTx:"#14532d" },
-      { id:"ciherang", name:"Ciherang", costHa:220000, baseYield:6500, resist:0.65, tag:"Populer",   tagBg:"#fef3c7", tagTx:"#92400e" },
-      { id:"hybrid",   name:"Hibrida",  costHa:380000, baseYield:8200, resist:0.82, tag:"Unggul",    tagBg:"#ede9fe", tagTx:"#5b21b6" },
-    ];
-    const PREPS = [
-      { id:"manual",  name:"Cangkul Manual", cost:500000, hBonus:0,  desc:"Hemat biaya, cocok untuk anggaran terbatas" },
-      { id:"tractor", name:"Traktor",        cost:900000, hBonus:10, desc:"Tanah lebih gembur — +10 kesehatan awal" },
-    ];
-    const FERTS = [
-      { id:"urea",    name:"Urea",    costHa:130000, yPlus:400, hPlus:5,  emoji:"💊" },
-      { id:"npk",     name:"NPK",     costHa:210000, yPlus:600, hPlus:8,  emoji:"✨" },
-      { id:"organic", name:"Organik", costHa:90000,  yPlus:250, hPlus:12, emoji:"🌿" },
-    ];
-    const SPRAYS = [
-      { id:"basic",   name:"Pestisida Biasa",   costHa:90000,  eff:0.65 },
-      { id:"premium", name:"Pestisida Premium", costHa:200000, eff:0.93 },
-    ];
-    const EVENTS = [
-      { id:"wereng",     name:"Serangan Wereng",  emoji:"🦗", hDmg:22, yDmg:900,  kind:"pest",    fix:{ costHa:100000, name:"Semprot Pestisida",   useSprays:true  } },
-      { id:"tikus",      name:"Serangan Tikus",   emoji:"🐀", hDmg:16, yDmg:700,  kind:"pest",    fix:{ costHa:80000,  name:"Pasang Perangkap",     useSprays:false } },
-      { id:"blast",      name:"Penyakit Blast",   emoji:"🍄", hDmg:28, yDmg:1100, kind:"disease", fix:{ costHa:180000, name:"Semprot Fungisida",     useSprays:true  } },
-      { id:"banjir",     name:"Banjir",           emoji:"🌊", hDmg:38, yDmg:1600, kind:"weather", fix:null },
-      { id:"kekeringan", name:"Kekeringan",       emoji:"☀️", hDmg:30, yDmg:1200, kind:"weather", fix:{ costHa:220000, name:"Pompakan Air Irigasi",  useSprays:false } },
-      { id:"angin",      name:"Angin Kencang",    emoji:"🌬️", hDmg:12, yDmg:500,  kind:"weather", fix:null },
-    ];
-    const GOOD_EVENTS = [
-      { name:"Cuaca Cerah",        emoji:"🌤️", hBon:8,  yBon:300 },
-      { name:"Hujan Merata",        emoji:"🌧️", hBon:10, yBon:400 },
-      { name:"Tanah Sangat Subur",  emoji:"🌱", hBon:6,  yBon:250 },
-    ];
-    const HARVEST_METHODS = [
-      { id:"manual",  name:"Manual (Buruh Tani)", costHa:400000, eff:0.88, desc:"Lebih hemat" },
-      { id:"combine", name:"Mesin Combine",       costHa:700000, eff:0.96, desc:"Cepat & efisien" },
-    ];
-    const SELL_OPTS = [
-      { id:"t", name:"Tengkulak",  mod:1.00, desc:"Harga pasar saat ini",  badge:null,      badgeBg:null },
-      { id:"b", name:"BULOG",      mod:1.08, desc:"Harga premium +8%",     badge:"Terbaik", badgeBg:"#16a34a" },
-      { id:"c", name:"Jual Cepat", mod:0.85, desc:"Diskon 15%, uang cair", badge:null,      badgeBg:null },
-    ];
-    const MARKET = [4800,5000,5200,5500,5800,6000,6200,4500,5300,5700,5100,5900,6500];
+const STAGES = {
+  veg_awal:    { name:"Vegetatif Awal",  emoji:"🌿", wks:"1–3",   wMin:2, wMax:5,  tip:"Butuh N tinggi. Pupuk Urea + TSP sekarang untuk anakan maksimal.",     crit:false, superCrit:false },
+  veg_akhir:   { name:"Vegetatif Akhir", emoji:"🌾", wks:"4–6",   wMin:3, wMax:7,  tip:"Anakan mencapai max. Tambah K untuk perkuat batang sebelum berbunga.", crit:false, superCrit:false },
+  reproduktif: { name:"Primordia ⚠️",   emoji:"🌺", wks:"7–8",   wMin:5, wMax:9,  tip:"KRITIS: Air wajib 5–9 cm. Kering di sini = jumlah bulir per malai turun drastis!", crit:true, superCrit:false },
+  pembungaan:  { name:"PEMBUNGAAN 🚨",  emoji:"🌸", wks:"9",     wMin:5, wMax:7,  tip:"SUPER KRITIS: Air wajib 5–7 cm. DILARANG semprot pestisida—membunuh serbuk sari!", crit:true, superCrit:true },
+  pengisian:   { name:"Pengisian Bulir", emoji:"🫘", wks:"10–11", wMin:3, wMax:6,  tip:"K tinggi = bulir penuh berisi. Mulai kurangi air di akhir fase.",      crit:false, superCrit:false },
+  pemasakan:   { name:"Pemasakan",       emoji:"🌻", wks:"12",    wMin:0, wMax:2,  tip:"Keringkan sawah untuk memudahkan panen dan memperkuat batang.",         crit:false, superCrit:false },
+};
 
-    /* ═══════════════════════════ FIELD GRID ═══════════════════════════ */
-    function FieldGrid({ phase, mWeek, health }) {
-      const cells = useMemo(() => {
-        return Array.from({ length: 32 }, (_, i) => {
-          const r = Math.floor(i / 8), c = i % 8;
-          const n = ((r * 7 + c * 13 + Math.round(health)) % 17) / 17;
-          const h = health / 100;
-          if (phase === "landPrep" || phase === "seedSelect") {
-            const v = 130 + Math.floor(n * 30);
-            return `rgb(${v},${Math.floor(v*.68)},${Math.floor(v*.38)})`;
-          }
-          if (phase === "planting") {
-            return `rgb(${35+Math.floor(n*15)},${90+Math.floor(n*25)},${155+Math.floor(n*20)})`;
-          }
-          if (phase === "maintenance" || phase === "harvest") {
-            const stage = mWeek < 3 ? "early" : mWeek < 6 ? "mid" : "late";
-            const dmg = n > Math.max(0.04, h * 0.92);
-            if (stage==="early") return dmg ? `rgb(148,98,48)` : `rgb(${30+Math.floor(n*25)},${155+Math.floor(n*40)},${40+Math.floor(n*20)})`;
-            if (stage==="mid")   return dmg ? `rgb(128,88,38)` : `rgb(${20+Math.floor(n*20)},${112+Math.floor(n*28)},25)`;
-            return dmg ? `rgb(118,84,34)` : `rgb(${195+Math.floor(n*40)},${152+Math.floor(n*28)},${15+Math.floor(n*28)})`;
-          }
-          if (phase === "selling") {
-            const v = 165 + Math.floor(n * 35);
-            return `rgb(${Math.floor(v*.78)},${Math.floor(v*.63)},${Math.floor(v*.48)})`;
-          }
-          return "#aaa";
-        });
-      }, [phase, mWeek, Math.round(health / 5) * 5]);
+const SEEDS = [
+  { id:"ir64",     name:"IR64",       costHa:150_000, by:5500, br:.50, tag:"Ekonomis",    tC:"#14532d", tB:"#dcfce7", desc:"Standar nasional. Cocok semua musim, hemat input." },
+  { id:"ciherang", name:"Ciherang",   costHa:220_000, by:6500, br:.65, tag:"Populer",     tC:"#92400e", tB:"#fef3c7", desc:"Paling banyak ditanam petani. Rasa nasi disukai." },
+  { id:"inpari32", name:"Inpari 32",  costHa:280_000, by:7200, br:.82, tag:"Tahan Blast", tC:"#1e40af", tB:"#dbeafe", desc:"Ketahanan blast tinggi. Ideal untuk lahan rawan penyakit." },
+  { id:"hybrid",   name:"Hibrida",    costHa:400_000, by:8500, br:.70, tag:"Unggul",      tC:"#5b21b6", tB:"#ede9fe", desc:"Potensi tertinggi. Perlu nutrisi & air lebih intensif." },
+];
 
-      return (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(8,1fr)", gap:"2px", borderRadius:"8px", overflow:"hidden", aspectRatio:"2/1" }}>
-          {cells.map((c, i) => <div key={i} style={{ background:c, transition:"background 0.9s ease" }} />)}
-        </div>
-      );
+const PREPS = [
+  { id:"cangkul", name:"Cangkul Biasa",        cost:500_000,   soilBonus:5,  weedRed:.30, desc:"Murah. Pengolahan dangkal — biji gulma masih banyak di permukaan." },
+  { id:"bajak",   name:"Bajak + Garu",          cost:900_000,   soilBonus:15, weedRed:.60, desc:"Standar. Tanah gembur, sebagian besar biji gulma terkubur." },
+  { id:"traktor", name:"Traktor + Laser Level", cost:1_500_000, soilBonus:20, weedRed:.80, desc:"Terbaik. Permukaan rata sempurna — irigasi merata, efisiensi +30%." },
+];
+
+const FERTS = [
+  { id:"urea",    name:"Urea (N)",    cost:120_000, N:40, P:0,  K:0,  em:"💊", opt:["veg_awal","veg_akhir"],                         bad:["pembungaan","pemasakan"],
+    rule:"N penting saat vegetatif. Jangan saat kering (burn) atau banjir (hanyut)." },
+  { id:"tsp",     name:"TSP (P)",     cost:130_000, N:0,  P:45, K:0,  em:"🔵", opt:["veg_awal"],                                     bad:[],
+    rule:"Fosfor untuk perakaran & anakan. Berikan di awal vegetatif sebagai pupuk dasar." },
+  { id:"kcl",     name:"KCl (K)",     cost:140_000, N:0,  P:0,  K:45, em:"🟤", opt:["veg_akhir","reproduktif","pengisian"],          bad:[],
+    rule:"K menguatkan batang & mengisi bulir. Vital saat reproduktif dan pengisian." },
+  { id:"phonska", name:"Phonska NPK", cost:190_000, N:20, P:20, K:20, em:"✨", opt:["veg_awal","veg_akhir"],                         bad:["pembungaan","pemasakan"],
+    rule:"Seimbang. Efisien untuk kebutuhan hara umum. Hindari saat berbunga." },
+  { id:"organik", name:"Organik",     cost:90_000,  N:5,  P:5,  K:5,  em:"🌿", opt:["veg_awal","veg_akhir","reproduktif","pengisian"], bad:[],
+    rule:"Aman semua fase. Memperbaiki struktur tanah. N pelepasan lambat & stabil." },
+];
+
+const SPRAYS = [
+  { id:"ins_biasa",   name:"Insektisida Biasa",   cost:90_000,  eff:.72, type:"insect", flowerDmg:.22,
+    rule:"Efektif serangga. BAHAYA saat bunga: racun serbuk sari, sterilitas −22%!" },
+  { id:"ins_premium", name:"Insektisida Premium", cost:200_000, eff:.93, type:"insect", flowerDmg:.27,
+    rule:"Sangat efektif. Risiko fitotoksisitas lebih tinggi saat pembungaan: −27%!" },
+  { id:"fungisida",   name:"Fungisida",           cost:160_000, eff:.85, type:"fungal", flowerDmg:.09,
+    rule:"Untuk blast & hawar daun. Lebih aman dari insektisida tapi tetap hindari saat bunga." },
+];
+
+const WEATHERS = [
+  { id:"cerah",  name:"Cerah Panas",   em:"☀️", p:.20, wD:-2, bD:-5  },
+  { id:"berawan",name:"Cerah Berawan", em:"⛅", p:.25, wD:0,  bD:0   },
+  { id:"h_ringan",name:"Hujan Ringan", em:"🌦️", p:.20, wD:2,  bD:10  },
+  { id:"h_lebat", name:"Hujan Lebat",  em:"🌧️", p:.15, wD:5,  bD:18, fertWash:true },
+  { id:"kemarau",name:"Kemarau",       em:"🌵", p:.10, wD:-5, bD:-10 },
+  { id:"banjir", name:"Banjir",        em:"🌊", p:.05, wD:10, bD:10,  fertWash:true },
+  { id:"angin",  name:"Angin Kencang", em:"🌬️", p:.05, wD:-1, bD:0   },
+];
+
+const PESTS = [
+  { id:"wereng",   name:"Wereng Batang Coklat", em:"🦗", hD:22, yL:900,  kind:"insect", fc:90_000,
+    info:"Populasi meledak bila N berlebih. Menghisap cairan batang." },
+  { id:"penggerek",name:"Penggerek Batang",     em:"🐛", hD:20, yL:800,  kind:"insect", fc:100_000,
+    info:"Larva merusak batang muda (sundep) & malai (beluk)." },
+  { id:"tikus",    name:"Serangan Tikus",        em:"🐀", hD:18, yL:750,  kind:"rodent", fc:80_000,
+    info:"Tidak mempan pestisida. Harus dengan perangkap massal." },
+  { id:"blast",    name:"Penyakit Blast",        em:"🍄", hD:28, yL:1400, kind:"fungal", fc:160_000,
+    info:"Jamur Pyricularia. Meledak saat N tinggi + kelembaban tinggi." },
+  { id:"hawar",    name:"Hawar Daun Bakteri",    em:"🌿", hD:18, yL:700,  kind:"fungal", fc:140_000,
+    info:"Bakteri Xanthomonas. Menyebar cepat lewat air banjir." },
+];
+
+const SELL_OPTS = [
+  { id:"t", name:"Tengkulak",  mod:1.00, desc:"Harga pasar standar, bayar langsung" },
+  { id:"b", name:"BULOG",      mod:1.10, desc:"HPP premium +10%, ada proses admin", badge:"Terbaik +10%" },
+  { id:"c", name:"Jual Cepat", mod:0.84, desc:"Diskon 16%, uang cair hari ini" },
+];
+
+/* ═══════════════════════ FIELD VISUAL ═══════════════════════ */
+
+function FieldGrid({ stage, waterCm, health, blastRisk }) {
+  const cells = useMemo(() => Array.from({length:32}, (_,i) => {
+    const r=Math.floor(i/8), c=i%8;
+    const n=((r*7+c*13+Math.round(health))%17)/17;
+    const h=health/100;
+    const dmg=n>Math.max(.04,h*.9);
+    const blasted=blastRisk>65&&n>.72;
+    if (!stage) return "rgb(128,78,34)";
+    if (stage==="veg_awal")    return dmg?"rgb(100,58,26)":`rgb(${28+Math.floor(n*18)},${148+Math.floor(n*42)},36)`;
+    if (stage==="veg_akhir")   return blasted?"rgb(188,148,42)":dmg?"rgb(92,56,24)":`rgb(${20+Math.floor(n*14)},${115+Math.floor(n*30)},20)`;
+    if (stage==="reproduktif") return dmg?"rgb(108,66,26)":`rgb(${22+Math.floor(n*12)},${105+Math.floor(n*26)},${16+Math.floor(n*10)})`;
+    if (stage==="pembungaan")  return dmg?"rgb(155,112,28)":`rgb(${198+Math.floor(n*28)},${172+Math.floor(n*18)},${52+Math.floor(n*26)})`;
+    if (stage==="pengisian")   return dmg?"rgb(128,86,28)":`rgb(${190+Math.floor(n*28)},${152+Math.floor(n*20)},${18+Math.floor(n*18)})`;
+    if (stage==="pemasakan")   return `rgb(${212+Math.floor(n*34)},${162+Math.floor(n*18)},${26+Math.floor(n*22)})`;
+    return "#aaa";
+  }), [stage, Math.round(health/5)*5, Math.round(blastRisk/20)*20]);
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:"2px",borderRadius:"8px",overflow:"hidden",aspectRatio:"2/1"}}>
+      {cells.map((c,i)=><div key={i} style={{background:c,transition:"background 0.9s"}}/>)}
+    </div>
+  );
+}
+
+/* ═══════════════════════ UI COMPONENTS ═══════════════════════ */
+
+function Btn({onClick,disabled,children,v="green",full=false,sm=false}) {
+  const BG={green:"#16a34a",blue:"#2563eb",amber:"#d97706",red:"#dc2626",gray:"#6b7280",purple:"#7c3aed",orange:"#ea580c",teal:"#0d9488"};
+  return (
+    <button onClick={onClick} disabled={disabled}
+      style={{background:disabled?"#e5e7eb":BG[v],color:disabled?"#9ca3af":"white",border:"none",
+        borderRadius:"8px",padding:sm?"5px 10px":"9px 13px",fontSize:sm?"11px":"13px",fontWeight:"600",
+        cursor:disabled?"default":"pointer",width:full?"100%":"auto",transition:"filter .15s"}}
+      onMouseOver={e=>{if(!disabled)e.target.style.filter="brightness(.87)"}}
+      onMouseOut={e=>{e.target.style.filter="none"}}>
+      {children}
+    </button>
+  );
+}
+
+function SelCard({onClick,children,border="#86efac",bg="#f0fdf4",hover="#dcfce7"}) {
+  const [hov,setHov]=useState(false);
+  return (
+    <div onClick={onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{background:hov?hover:bg,border:`1.5px solid ${hov?border.replace("a","6"):border}`,
+        borderRadius:"10px",padding:"10px 12px",marginBottom:"7px",cursor:"pointer",
+        transition:"background .15s",position:"relative"}}>
+      {children}
+    </div>
+  );
+}
+
+function StatusBar({value,max=100,color,label}) {
+  const pct=Math.min(100,Math.max(0,(value/max)*100));
+  return (
+    <div style={{marginBottom:"5px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#6b7280",marginBottom:"2px"}}>
+        <span>{label}</span>
+        <span style={{fontWeight:"700",color}}>{Math.round(value)}%</span>
+      </div>
+      <div style={{background:"#e5e7eb",borderRadius:"999px",height:"5px"}}>
+        <div style={{background:color,borderRadius:"999px",height:"5px",width:`${pct}%`,transition:"width .4s"}}/>
+      </div>
+    </div>
+  );
+}
+
+function AgroAlert({msg,sev}) {
+  const MAP = {
+    crit:  {bg:"#fef2f2",bd:"#dc2626",tx:"#991b1b",ic:"💀"},
+    danger:{bg:"#fef3c7",bd:"#f59e0b",tx:"#92400e",ic:"⚠️"},
+    warn:  {bg:"#fffbeb",bd:"#d97706",tx:"#78350f",ic:"📌"},
+    good:  {bg:"#f0fdf4",bd:"#22c55e",tx:"#14532d",ic:"✅"},
+    info:  {bg:"#eff6ff",bd:"#3b82f6",tx:"#1e40af",ic:"ℹ️"},
+  };
+  const c=MAP[sev]||MAP.info;
+  return (
+    <div style={{background:c.bg,border:`1.5px solid ${c.bd}`,borderRadius:"8px",
+      padding:"8px 11px",marginBottom:"5px",fontSize:"12px",color:c.tx,lineHeight:"1.55"}}>
+      {c.ic} {msg}
+    </div>
+  );
+}
+
+/* ═══════════════════════ MAIN GAME ═══════════════════════ */
+
+function FarmSim() {
+  // ── navigation ──
+  const [screen,  setScreen]  = useState("intro");
+  const [season,  setSeason]  = useState(1);
+
+  // ── economy ──
+  const [money,   setMoney]   = useState(INIT_MONEY);
+  const [spent,   setSpent]   = useState(0);
+
+  // ── game flow ──
+  const [phase,   setPhase]   = useState("landPrep");
+  const [week,    setWeek]    = useState(0);
+
+  // ── crop state ──
+  const [health,  setHealth]  = useState(100);
+  const [seedId,  setSeedId]  = useState(null);
+  const [baseY,   setBaseY]   = useState(0);
+  const [yMult,   setYMult]   = useState(1.0);
+
+  // ── field conditions ──
+  const [waterCm, setWaterCm] = useState(3);
+  const [nutN,    setNutN]    = useState(40);
+  const [nutP,    setNutP]    = useState(40);
+  const [nutK,    setNutK]    = useState(40);
+  const [blastRisk,setBlast]  = useState(20);
+  const [weedPres, setWeed]   = useState(50);
+
+  // ── weekly actions ──
+  const [weather,  setWeather] = useState(null);
+  const [pest,     setPest]    = useState(null);
+  const [pestOK,   setPestOK]  = useState(true);
+  const [fertDone, setFertDone]= useState(false);
+  const [sprayDone,setSprayDone]= useState(false);
+  const [waterAct, setWaterAct]= useState("maintain");
+
+  // ── conseq log ──
+  const [agroLog,  setAgroLog] = useState([]);
+
+  // ── harvest ──
+  const [harvestKg,setHarvestKg]= useState(0);
+  const [mktPrice, setMktPrice] = useState(5200);
+  const [hStep,    setHStep]    = useState("timing");
+  const [hWeek,    setHWeek]    = useState(13);
+
+  // ── activity log ──
+  const [log,      setLog]      = useState([]);
+  const [history,  setHistory]  = useState([]);
+
+  // ── computed ──
+  const seed  = SEEDS.find(s => s.id === seedId);
+  const stage = getStage(week);
+  const si    = STAGES[stage] || null;
+  const estY  = Math.max(300, Math.round(baseY * yMult * (health / 100)));
+  const hCol  = health > 65 ? "#22c55e" : health > 35 ? "#f59e0b" : "#ef4444";
+  const wCol  = si ? (waterCm < si.wMin ? "#ef4444" : waterCm > si.wMax ? "#f59e0b" : "#22c55e") : "#22c55e";
+  const inMaint = phase === "maintenance";
+
+  const push  = (msg, t="i") => setLog(l => [{msg,t,k:Date.now()+Math.random()},...l].slice(0,12));
+  const addA  = (msg, sev)   => setAgroLog(a => [...a, {msg,sev,k:Date.now()+Math.random()}]);
+  const pay   = cost => { setMoney(m => m - cost); setSpent(s => s + cost); };
+
+  /* ──────────────────────────────────────────────────────── */
+  /*  WEEK SETUP — called at start of each new week          */
+  /* ──────────────────────────────────────────────────────── */
+  const setupWeek = (w, prevWater) => {
+    // Pick weather
+    let r=Math.random(), cum=0, wthr=WEATHERS[0];
+    for (const wt of WEATHERS) { cum+=wt.p; if(r<cum){wthr=wt;break;} }
+    setWeather(wthr);
+
+    // Apply weather water delta
+    const nw = Math.max(0, Math.min(20, prevWater + wthr.wD));
+    setWaterCm(nw);
+
+    // Blast risk drift from weather
+    setBlast(b => Math.min(100, Math.max(0, b + wthr.bD)));
+
+    // Nutrient consumption by plant each week
+    const stg = getStage(w);
+    const nCon = (stg==="veg_awal"||stg==="veg_akhir") ? 9 : stg==="reproduktif" ? 7 : 5;
+    const pCon = stg==="veg_awal" ? 6 : 3;
+    const kCon = (stg==="reproduktif"||stg==="pengisian") ? 9 : 4;
+    setNutN(n => Math.max(0, n - nCon));
+    setNutP(p => Math.max(0, p - pCon));
+    setNutK(k => Math.max(0, k - kCon));
+
+    // Pest event (25% chance)
+    if (Math.random() < 0.25) {
+      const p = PESTS[Math.floor(Math.random() * PESTS.length)];
+      setPest(p); setPestOK(false);
+      push(`⚠️ ${p.em} ${p.name} terdeteksi!`, "w");
+    } else {
+      setPest(null); setPestOK(true);
     }
 
-    /* ═══════════════════════════ SHARED COMPONENTS ═══════════════════════════ */
-    function Btn({ onClick, disabled, children, variant="green", full=false }) {
-      const bg = { green:"#16a34a", blue:"#2563eb", amber:"#d97706", red:"#dc2626", gray:"#6b7280", purple:"#7c3aed" };
-      return (
-        <button onClick={onClick} disabled={disabled}
-          style={{ background:disabled?"#e5e7eb":bg[variant], color:disabled?"#9ca3af":"white", border:"none",
-            borderRadius:"8px", padding:"10px 14px", fontSize:"13px", fontWeight:"600",
-            cursor:disabled?"default":"pointer", width:full?"100%":"auto", transition:"filter .15s" }}
-          onMouseOver={e => { if (!disabled) e.target.style.filter="brightness(.88)"; }}
-          onMouseOut={e  => { e.target.style.filter="none"; }}
-        >{children}</button>
-      );
+    // Reset per-week actions
+    setFertDone(false); setSprayDone(false);
+    setWaterAct("maintain"); setAgroLog([]);
+
+    push(`🗓️ Minggu ${w} dimulai — ${wthr.em} ${wthr.name} (air ${wthr.wD>0?"+":""}${wthr.wD}cm)`, "i");
+  };
+
+  /* ──────────────────── LAND PREP ──────────────────── */
+  const doPrep = id => {
+    const p = PREPS.find(x => x.id === id);
+    if (money < p.cost) { push("Modal tidak cukup!","e"); return; }
+    pay(p.cost);
+    setWeed(100 - Math.round(p.weedRed * 100));
+    push(`🚜 ${p.name} — gulma berkurang ${Math.round(p.weedRed*100)}%`, "g");
+    push(`💸 ${fmt(p.cost)}`, "c");
+    setPhase("seedSelect");
+  };
+
+  /* ──────────────────── SEED BUY ──────────────────── */
+  const doSeed = id => {
+    const s = SEEDS.find(x => x.id === id);
+    const cost = s.costHa * LAND;
+    if (money < cost) { push("Modal tidak cukup!","e"); return; }
+    pay(cost); setSeedId(id); setBaseY(s.by);
+    push(`🌾 Benih ${s.name} — potensi ${s.by.toLocaleString()} kg/ha`, "g");
+    setPhase("planting");
+  };
+
+  /* ──────────────────── PLANT ──────────────────── */
+  const doPlant = () => {
+    setPhase("maintenance"); setWeek(1);
+    setWaterCm(4); setNutN(50); setNutP(50); setNutK(50);
+    setYMult(1.0); setBlast(20); setWeed(weedPres);
+    setHealth(100);
+    setupWeek(1, 4);
+    push("🌱 Padi ditanam! Fase perawatan 12 minggu dimulai.", "g");
+  };
+
+  /* ──────────────────── FERTILIZE ──────────────────── */
+  const doFert = id => {
+    if (fertDone) { push("Sudah pupuk minggu ini!","w"); return; }
+    const f = FERTS.find(x => x.id === id);
+    const cost = f.cost * LAND;
+    if (money < cost) { push("Modal tidak cukup!","e"); return; }
+
+    // ── Condition checks (scientific rules) ──
+    if (waterCm < 2 && id !== "organik") {
+      // FERTILIZER BURN: dry soil = high salt concentration
+      addA(`FERTILIZER BURN: Air hanya ${waterCm} cm. Konsentrasi garam pupuk tinggi merusak akar → efisiensi 15% saja, kehilangan hasil −6%.`, "danger");
+      setYMult(m => m - 0.06);
+      setNutN(n => Math.min(100, n + f.N * 0.15));
+      setNutP(p => Math.min(100, p + f.P * 0.15));
+      setNutK(k => Math.min(100, k + f.K * 0.15));
+    } else if (weather?.fertWash && waterCm > 10) {
+      // WASHOUT: flood/heavy rain dissolves fertilizer
+      addA(`PUPUK HANYUT: Cuaca ${weather.name}, genangan ${waterCm} cm. Pupuk terlarut terbawa air irigasi → hanya 8% terserap, uang terbuang sia-sia.`, "danger");
+      setNutN(n => Math.min(100, n + f.N * 0.08));
+      setNutP(p => Math.min(100, p + f.P * 0.08));
+      setNutK(k => Math.min(100, k + f.K * 0.08));
+      setYMult(m => m - 0.04);
+    } else if (f.bad.includes(stage)) {
+      // WRONG TIMING
+      addA(`${f.name} saat ${si?.name} kurang efektif. Tanaman dalam fase yang tidak membutuhkan nutrisi ini secara dominan → efisiensi 45%.`, "warn");
+      setNutN(n => Math.min(100, n + f.N * 0.45));
+      setNutP(p => Math.min(100, p + f.P * 0.45));
+      setNutK(k => Math.min(100, k + f.K * 0.45));
+    } else if (f.opt.includes(stage)) {
+      // OPTIMAL TIMING
+      addA(`${f.name} pada waktu tepat (${si?.name}) → penyerapan maksimal 82%. Pertumbuhan optimal!`, "good");
+      setNutN(n => Math.min(100, n + f.N * 0.82));
+      setNutP(p => Math.min(100, p + f.P * 0.82));
+      setNutK(k => Math.min(100, k + f.K * 0.82));
+      if (f.N > 0) setYMult(m => m + 0.04);
+    } else {
+      // ACCEPTABLE (not optimal, not bad)
+      setNutN(n => Math.min(100, n + f.N * 0.60));
+      setNutP(p => Math.min(100, p + f.P * 0.60));
+      setNutK(k => Math.min(100, k + f.K * 0.60));
     }
 
-    function SelCard({ children, onClick, border="#86efac", bg="#f0fdf4", hover="#dcfce7" }) {
-      const [hov, setHov] = useState(false);
-      return (
-        <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-          style={{ background:hov?hover:bg, border:`1.5px solid ${hov?border.replace("a","6"):border}`,
-            borderRadius:"10px", padding:"12px 14px", marginBottom:"8px",
-            cursor:"pointer", transition:"background .15s", position:"relative" }}>
-          {children}
-        </div>
-      );
+    // ── Excess N → increased blast risk ──
+    if (f.N > 15 && nutN > 65) {
+      setBlast(b => Math.min(100, b + 20));
+      addA(`N sudah tinggi (${Math.round(nutN)}%), tambahan ${f.name} meningkatkan blast risk +20%. Jaringan tanaman lebih lunak, mudah diinfeksi jamur.`, "warn");
     }
 
-    /* ═══════════════════════════ MAIN GAME ═══════════════════════════ */
-    function FarmSim() {
-      const [screen,    setScreen]    = useState("intro");
-      const [season,    setSeason]    = useState(1);
-      const [week,      setWeek]      = useState(1);
-      const [money,     setMoney]     = useState(INITIAL_MONEY);
-      const [spent,     setSpent]     = useState(0);
-      const [phase,     setPhase]     = useState("landPrep");
-      const [mWeek,     setMWeek]     = useState(0);
-      const [health,    setHealth]    = useState(100);
-      const [seedId,    setSeedId]    = useState(null);
-      const [baseYield, setBaseYield] = useState(0);
-      const [fertDone,  setFertDone]  = useState(false);
-      const [badEv,     setBadEv]     = useState(null);
-      const [evDone,    setEvDone]    = useState(true);
-      const [mktPrice,  setMktPrice]  = useState(5200);
-      const [harvestKg, setHarvestKg] = useState(0);
-      const [history,   setHistory]   = useState([]);
-      const [log,       setLog]       = useState([]);
+    pay(cost); setFertDone(true);
+    push(`${f.em} Pupuk ${f.name} diaplikasikan`, "g");
+    push(`💸 ${fmt(cost)}`, "c");
+  };
 
-      const seed      = SEEDS.find(s => s.id === seedId);
-      const estYield  = Math.max(500, Math.round((baseYield - (100 - health) * 30) * LAND));
-      const hColor    = health > 65 ? "#22c55e" : health > 35 ? "#f59e0b" : "#ef4444";
-      const push      = (msg, t="i") => setLog(l => [{ msg, t, k:Math.random() }, ...l].slice(0, 10));
-      const pay       = (cost) => { setMoney(m => m - cost); setSpent(s => s + cost); };
+  /* ──────────────────── SPRAY ──────────────────── */
+  const doSpray = (spId, forPest = false) => {
+    if (sprayDone) { push("Sudah semprot minggu ini!","w"); return; }
+    const sp = SPRAYS.find(x => x.id === spId);
+    const cost = sp.cost * LAND;
+    if (money < cost) { push("Modal tidak cukup!","e"); return; }
 
-      const rollEvent = () => {
-        setBadEv(null); setEvDone(true); setFertDone(false);
-        setMktPrice(MARKET[Math.floor(Math.random() * MARKET.length)]);
-        const r = Math.random();
-        if (r < 0.40) {
-          const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
-          setBadEv(ev); setEvDone(false);
-          push(`⚠️ ${ev.emoji} ${ev.name} menyerang sawah!`, "w");
-        } else if (r < 0.62) {
-          const ge = GOOD_EVENTS[Math.floor(Math.random() * GOOD_EVENTS.length)];
-          setHealth(h => Math.min(100, h + ge.hBon));
-          setBaseYield(y => y + ge.yBon);
-          push(`${ge.emoji} ${ge.name}! Tanaman makin subur.`, "g");
+    // ── CRITICAL: spray during flowering ──
+    if (stage === "pembungaan") {
+      const pct = Math.round(sp.flowerDmg * 100);
+      addA(`BENCANA: ${sp.name} disemprot saat PEMBUNGAAN! Zat aktif meracuni serbuk sari & putik → penyerbukan gagal massal → −${pct}% hasil panen. Ini kesalahan fatal!`, "crit");
+      setYMult(m => m - sp.flowerDmg);
+      setHealth(h => Math.max(5, h - 14));
+      pay(cost); setSprayDone(true); setPestOK(true);
+      push(`⚠️ Semprot pestisida saat bunga — kerusakan fatal!`, "w");
+      push(`💸 ${fmt(cost)}`, "c");
+      return;
+    }
+
+    // ── Spray without active pest ──
+    if (!pest && !forPest) {
+      addA(`Semprot preventif tanpa hama aktif: biaya terbuang + resistensi hama meningkat di masa depan. Gunakan hanya bila ada ancaman nyata.`, "warn");
+      setBlast(b => Math.min(100, b + 5));
+      pay(cost); setSprayDone(true);
+      push(`🔬 Semprot preventif (tidak ada hama)`, "g");
+      push(`💸 ${fmt(cost)}`, "c");
+      return;
+    }
+
+    // ── Handle active pest ──
+    if (pest) {
+      const typeMatch = (sp.type === "insect" && pest.kind === "insect") ||
+                        (sp.type === "fungal"  && pest.kind === "fungal");
+      if (!typeMatch) {
+        addA(`${sp.name} TIDAK COCOK untuk ${pest.name}! ${pest.kind==="rodent"?"Tikus butuh perangkap, bukan pestisida.":"Gunakan jenis pestisida yang sesuai."} Hama masih aktif!`, "danger");
+        pay(cost); setSprayDone(true);
+        push(`❌ Jenis pestisida salah untuk hama ini!`, "w");
+        push(`💸 ${fmt(cost)}`, "c");
+        return;
+      }
+      const eff = Math.min(0.97, sp.eff + (seed?.br || 0.5) * 0.12);
+      setHealth(h => Math.max(5, h - Math.round(pest.hD * (1 - eff))));
+      setYMult(m => m - (pest.yL / baseY) * (1 - eff));
+      addA(`${pest.name} ditangani efektif (efisiensi ${Math.round(eff*100)}%). Kerusakan minimal berkat varietas ${seed?.name||"ini"}.`, "good");
+      setPestOK(true);
+    }
+
+    pay(cost); setSprayDone(true);
+    push(`🔬 ${sp.name} disemprot`, "g");
+    push(`💸 ${fmt(cost)}`, "c");
+  };
+
+  /* ──────────────────── TRAP (tikus) ──────────────────── */
+  const doTrap = () => {
+    if (!pest || pest.kind !== "rodent") return;
+    const cost = pest.fc * LAND;
+    if (money < cost) { push("Modal tidak cukup!","e"); return; }
+    pay(cost);
+    setHealth(h => Math.max(5, h - Math.round(pest.hD * 0.18)));
+    setYMult(m => m - (pest.yL / baseY) * 0.18);
+    addA(`Perangkap tikus dipasang massal. Kerusakan diminimalkan (18% dari potensi kerusakan penuh).`, "good");
+    setPestOK(true);
+    push(`🪤 Perangkap tikus dipasang`, "g");
+    push(`💸 ${fmt(cost)}`, "c");
+  };
+
+  /* ──────────────────── IGNORE PEST ──────────────────── */
+  const doIgnore = () => {
+    if (!pest) return;
+    setHealth(h => Math.max(5, h - pest.hD));
+    setYMult(m => m - pest.yL / baseY);
+    addA(`${pest.name} diabaikan — kerusakan PENUH: −${pest.hD}% kesehatan tanaman, −${pest.yL.toLocaleString()} kg potensi panen.`, "danger");
+    setPestOK(true);
+    push(`⚠️ ${pest.em} Hama diabaikan — kerusakan besar!`, "w");
+  };
+
+  /* ──────────────────── ADVANCE WEEK ──────────────────── */
+  const doAdvWeek = () => {
+    if (!pestOK) { push("Tangani hama terlebih dahulu!","w"); return; }
+
+    // ── Apply water action ──
+    let fw = waterCm;
+    let irrCost = 0;
+    if (waterAct === "add5")     { fw = Math.min(20, waterCm + 5); irrCost = 60_000; }
+    else if (waterAct === "add3") { fw = Math.min(20, waterCm + 3); irrCost = 40_000; }
+    else if (waterAct === "drain3")  { fw = Math.max(0, waterCm - 4); }
+    else if (waterAct === "drainAll"){ fw = 0; }
+    if (irrCost > 0) pay(irrCost);
+    setWaterCm(fw);
+
+    const newLog = [...agroLog];
+
+    /* ════════ SCIENTIFIC CONSEQUENCE ENGINE ════════ */
+
+    // 1. WATER vs STAGE REQUIREMENTS
+    if (si) {
+      if (fw < si.wMin) {
+        const def = si.wMin - fw;
+        if (stage === "pembungaan") {
+          // CATASTROPHIC: drought during anthesis
+          setYMult(m => m - 0.40); setHealth(h => Math.max(5, h - 22));
+          newLog.push({msg:`💀 BENCANA: Sawah kering saat PEMBUNGAAN (${fw} cm, min ${si.wMin} cm)! Suhu stomata melonjak, serbuk sari tidak berkecambah → sterilitas massal → −40% hasil panen.`, sev:"crit"});
+        } else if (stage === "reproduktif") {
+          // MAJOR: drought during panicle initiation
+          setYMult(m => m - 0.22);
+          newLog.push({msg:`Kekeringan saat PRIMORDIA (${fw} cm, min ${si.wMin} cm): stres air menghambat diferensiasi malai → jumlah bulir per malai turun drastis → −22%.`, sev:"danger"});
+        } else if (stage === "pengisian") {
+          setYMult(m => m - 0.10);
+          newLog.push({msg:`Kurang air saat pengisian bulir (${fw} cm): asimilasi karbohidrat ke biji terhambat → bulir hampa/puso meningkat → −10%.`, sev:"danger"});
         } else {
-          push("🌿 Minggu tenang, tidak ada kejadian.", "i");
+          const loss = Math.min(0.12, def * 0.03);
+          setYMult(m => m - loss);
+          newLog.push({msg:`Air kurang saat ${si.name} (${fw} cm < min ${si.wMin} cm): pertumbuhan terhambat → −${Math.round(loss*100)}%.`, sev:"warn"});
         }
-      };
-
-      const doLandPrep = (id) => {
-        const p = PREPS.find(x => x.id === id);
-        if (money < p.cost) { push("Modal tidak cukup!", "e"); return; }
-        pay(p.cost);
-        setHealth(Math.min(100, 100 + p.hBonus));
-        push(`🚜 ${p.name} selesai. Lahan siap tanam!`, "g");
-        push(`💸 Biaya: ${fmt(p.cost)}`, "c");
-        setPhase("seedSelect");
-      };
-
-      const doBuySeed = (id) => {
-        const s = SEEDS.find(x => x.id === id);
-        const cost = s.costHa * LAND;
-        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
-        pay(cost); setSeedId(id); setBaseYield(s.baseYield);
-        push(`🌾 Benih ${s.name} dibeli — potensi ${s.baseYield.toLocaleString()} kg/ha.`, "g");
-        push(`💸 Biaya: ${fmt(cost)}`, "c");
-        setPhase("planting");
-      };
-
-      const doPlant = () => {
-        setPhase("maintenance"); setMWeek(0); setWeek(5);
-        push("🌱 Padi berhasil ditanam! Fase perawatan dimulai.", "g");
-        rollEvent();
-      };
-
-      const doFertilize = (id) => {
-        const f = FERTS.find(x => x.id === id);
-        const cost = f.costHa * LAND;
-        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
-        pay(cost);
-        setBaseYield(y => y + f.yPlus);
-        setHealth(h => Math.min(100, h + f.hPlus));
-        setFertDone(true);
-        push(`${f.emoji} ${f.name} diaplikasikan (+${f.yPlus} kg, +${f.hPlus} kesehatan).`, "g");
-        push(`💸 Biaya: ${fmt(cost)}`, "c");
-      };
-
-      const doSpray = (id) => {
-        const sp = SPRAYS.find(x => x.id === id);
-        const cost = sp.costHa * LAND;
-        if (money < cost || !badEv) { if (money < cost) push("Modal tidak cukup!", "e"); return; }
-        pay(cost);
-        const eff = Math.min(1, sp.eff + (seed ? seed.resist * 0.15 : 0));
-        setHealth(h => Math.max(5, h - Math.round(badEv.hDmg * (1 - eff))));
-        setBaseYield(y => Math.max(500, y - Math.round(badEv.yDmg * (1 - eff))));
-        setEvDone(true);
-        push(`✅ ${badEv.name} ditangani (efektivitas ${Math.round(eff * 100)}%).`, "g");
-        push(`💸 Biaya: ${fmt(cost)}`, "c");
-      };
-
-      const doFix = () => {
-        if (!badEv?.fix || badEv.fix.useSprays) return;
-        const cost = badEv.fix.costHa * LAND;
-        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
-        pay(cost);
-        setHealth(h => Math.max(5, h - Math.round(badEv.hDmg * 0.2)));
-        setBaseYield(y => Math.max(500, y - Math.round(badEv.yDmg * 0.2)));
-        setEvDone(true);
-        push(`✅ ${badEv.fix.name} berhasil. Kerusakan diminimalkan.`, "g");
-        push(`💸 Biaya: ${fmt(cost)}`, "c");
-      };
-
-      const doIgnore = () => {
-        if (badEv) {
-          setHealth(h => Math.max(5, h - badEv.hDmg));
-          setBaseYield(y => Math.max(500, y - badEv.yDmg));
-          push(`⚠️ ${badEv.name} diabaikan — kerusakan signifikan terjadi!`, "w");
+      } else if (fw > si.wMax) {
+        const exc = fw - si.wMax;
+        if (stage === "pemasakan") {
+          setYMult(m => m - 0.08);
+          newLog.push({msg:`Genangan saat pemasakan (${fw} cm > maks ${si.wMax} cm): menghambat translokasi N ke gabah + risiko rebah (lodging) → −8%.`, sev:"warn"});
+        } else if (exc > 6) {
+          setYMult(m => m - 0.12); setHealth(h => Math.max(5, h - 10));
+          newLog.push({msg:`Banjir parah (${fw} cm)! Anoksia akar, pupuk yang baru diaplikasikan hanyut, stomata tertutup → kerusakan serius −12%.`, sev:"danger"});
+        } else if (exc > 2) {
+          setYMult(m => m - 0.04);
+          newLog.push({msg:`Genangan berlebih (${fw} cm > maks ${si.wMax} cm): respirasi akar terganggu, pertumbuhan melambat → −4%.`, sev:"info"});
         }
-        setEvDone(true);
-      };
-
-      const doNextWeek = () => {
-        if (mWeek >= 7) {
-          setPhase("harvest"); setWeek(13);
-          push("🌾 Padi sudah matang! Saatnya panen.", "g");
-        } else {
-          setMWeek(w => w + 1); setWeek(w => w + 1);
-          rollEvent();
+      } else {
+        // OPTIMAL water
+        if (stage === "pembungaan") {
+          newLog.push({msg:`Air optimal saat pembungaan (${fw} cm ✅). Penyerbukan berlangsung sempurna — semua serbuk sari fertil!`, sev:"good"});
+        } else if (stage === "reproduktif") {
+          newLog.push({msg:`Irigasi tepat saat primordia (${fw} cm ✅). Jumlah bulir per malai terbentuk maksimal!`, sev:"good"});
         }
-      };
+      }
+    }
 
-      const doHarvest = (id) => {
-        const hm = HARVEST_METHODS.find(x => x.id === id);
-        const cost = hm.costHa * LAND;
-        if (money < cost) { push("Modal tidak cukup!", "e"); return; }
-        pay(cost);
-        const kg = Math.round(estYield * hm.eff);
-        setHarvestKg(kg); setPhase("selling");
-        push(`🌾 Panen selesai! ${kg.toLocaleString()} kg gabah kering.`, "g");
-        push(`💸 Biaya panen: ${fmt(cost)}`, "c");
-      };
+    // 2. NUTRIENT DEFICIENCY PENALTIES
+    if (nutN < 20 && (stage === "veg_awal" || stage === "veg_akhir")) {
+      setYMult(m => m - 0.06);
+      newLog.push({msg:`Defisiensi Nitrogen (N=${Math.round(nutN)}%): daun menguning (klorosis), pembentukan anakan berkurang → −6%.`, sev:"warn"});
+    }
+    if (nutK < 20 && (stage === "reproduktif" || stage === "pengisian")) {
+      setYMult(m => m - 0.05);
+      newLog.push({msg:`Defisiensi Kalium (K=${Math.round(nutK)}%): bulir tidak terisi sempurna, biji keriput dan ringan → −5%.`, sev:"warn"});
+    }
 
-      const doSell = (mod) => {
-        const price   = Math.round(mktPrice * mod);
-        const revenue = harvestKg * price;
-        const profit  = revenue - spent;
-        const newMoney = money + revenue;
-        setHistory(h => [...h, { season, kg:harvestKg, price, revenue, profit, finalMoney:newMoney }]);
-        push(`💰 ${harvestKg.toLocaleString()} kg × ${fmt(price)}/kg = ${fmt(revenue)}`, "g");
-        push(`📊 Laba musim ini: ${fmt(profit)}`, profit > 0 ? "g" : "w");
-        if (newMoney < 500000) { setMoney(newMoney); setScreen("over"); return; }
-        const ns = season + 1;
-        setSeason(ns); setWeek(1); setPhase("landPrep"); setMWeek(0);
-        setHealth(100); setSeedId(null); setBaseYield(0); setFertDone(false);
-        setBadEv(null); setEvDone(true); setHarvestKg(0); setSpent(0); setMoney(newMoney);
-        push(`🌱 Musim ${ns} dimulai! Modal: ${fmt(newMoney)}`, "g");
-      };
+    // 3. WEED COMPETITION (critical weeks 2–5)
+    if (week >= 2 && week <= 5 && weedPres > 40) {
+      const wLoss = (weedPres - 40) * 0.0018;
+      setYMult(m => m - wLoss);
+      setWeed(p => Math.max(0, p - 12));
+      newLog.push({msg:`Tekanan gulma tinggi (${Math.round(weedPres)}%): bersaing cahaya & nutrisi di fase kritis vegetatif → −${Math.round(wLoss*100)}%.`, sev:"warn"});
+    } else {
+      setWeed(p => Math.max(0, p - 6));
+    }
 
-      const PHASE_LABELS = {
-        landPrep:"Persiapan Lahan", seedSelect:"Pilih Varietas Benih", planting:"Siap Tanam",
-        maintenance:`Perawatan — Minggu ${mWeek+1} dari 8`, harvest:"Panen Raya", selling:"Jual Gabah",
-      };
-      const PHASE_STEPS = ["landPrep","seedSelect","planting","maintenance","harvest","selling"];
-      const phaseIdx    = PHASE_STEPS.indexOf(phase);
-      const logColors   = { i:"#9ca3af", g:"#4ade80", w:"#fbbf24", e:"#f87171", c:"#fb923c" };
-      const showCrop    = ["maintenance","harvest","selling"].includes(phase);
+    // 4. BLAST AUTO-OUTBREAK (probability based on blast risk)
+    if (blastRisk > 65 && stage !== "pemasakan") {
+      const chance = (blastRisk - 65) / 100;
+      if (Math.random() < chance) {
+        const bEvt = PESTS.find(p => p.id === "blast");
+        setHealth(h => Math.max(5, h - Math.round(bEvt.hD * 0.55)));
+        setYMult(m => m - (bEvt.yL * 0.55) / baseY);
+        newLog.push({msg:`🍄 Blast menyerang otomatis! Kondisi ideal: N tinggi + kelembaban tinggi. Infeksi parsial terjadi → kerusakan signifikan.`, sev:"danger"});
+      }
+    }
 
-      /* ── INTRO ── */
-      if (screen === "intro") return (
-        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#052e16,#14532d,#166534)",
-          display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
-          <div style={{ background:"white", borderRadius:"20px", padding:"36px 28px",
-            maxWidth:"460px", width:"100%", boxShadow:"0 20px 48px rgba(0,0,0,.32)" }}>
-            <div style={{ textAlign:"center", marginBottom:"24px" }}>
-              <div style={{ fontSize:"60px", marginBottom:"8px" }}>🌾</div>
-              <h1 style={{ margin:"0 0 8px", fontSize:"26px", fontWeight:"800", color:"#14532d", letterSpacing:"-.5px" }}>
-                Simulator Petani Padi
-              </h1>
-              <p style={{ margin:0, color:"#6b7280", fontSize:"14px", lineHeight:"1.7" }}>
-                Jadilah manajer usaha tani! Kelola lahan sawah 1 hektar, pilih strategi terbaik,
-                hadapi hama &amp; cuaca, dan raih keuntungan maksimal.
-              </p>
+    setAgroLog(newLog);
+
+    // ── Advance to next week ──
+    const nw = week + 1;
+    if (nw > 12) {
+      setPhase("harvest");
+      setHStep("timing");
+      setHWeek(13);
+      setMktPrice(PRICES[Math.floor(Math.random() * PRICES.length)]);
+      push("🌾 Padi matang setelah 12 minggu! Siap memasuki fase panen.", "g");
+      return;
+    }
+    setWeek(nw);
+    setupWeek(nw, fw);
+  };
+
+  /* ──────────────────── HARVEST ──────────────────── */
+  const doHarvest = methodId => {
+    const HMS = [
+      {id:"manual",  name:"Buruh Tani (Manual)", cost:400_000, eff:.88},
+      {id:"combine", name:"Mesin Combine",        cost:700_000, eff:.96},
+    ];
+    const hm = HMS.find(x => x.id === methodId);
+    if (money < hm.cost) { push("Modal tidak cukup!","e"); return; }
+
+    // ── Harvest timing modifier ──
+    const timingAlerts = [...agroLog];
+    let timingMod = 1.0;
+    if (hWeek <= 12) {
+      timingMod = 0.80;
+      timingAlerts.push({msg:"Panen terlalu awal (Mg 12): gabah belum matang penuh. Kadar air >28%, banyak beras kapur (chalk), rendemen giling turun −20%.", sev:"danger"});
+    } else if (hWeek === 13) {
+      timingAlerts.push({msg:"Waktu panen OPTIMAL (Mg 13 = 80–85% gabah kuning). Kualitas dan kuantitas maksimal!", sev:"good"});
+    } else if (hWeek === 14) {
+      timingMod = 0.93;
+      timingAlerts.push({msg:"Panen terlambat 1 minggu (Mg 14): gabah rontok (shattering) sudah terjadi sebelum dipanen → kehilangan −7%.", sev:"warn"});
+    } else {
+      timingMod = 0.82;
+      timingAlerts.push({msg:"Panen sangat terlambat (Mg 15+): kerontokan parah, serangan burung meningkat, kadar FFA naik → kehilangan −18%!", sev:"danger"});
+    }
+    setAgroLog(timingAlerts);
+
+    pay(hm.cost);
+    const kg = Math.round(estY * timingMod * hm.eff);
+    setHarvestKg(kg);
+    setPhase("selling");
+    push(`🌾 Panen selesai: ${kg.toLocaleString()} kg gabah kering`, "g");
+    push(`💸 Biaya panen: ${fmt(hm.cost)}`, "c");
+  };
+
+  /* ──────────────────── SELL ──────────────────── */
+  const doSell = mod => {
+    const price  = Math.round(mktPrice * mod);
+    const rev    = harvestKg * price;
+    const profit = rev - spent;
+    const nm     = money + rev;
+    setHistory(h => [...h, {season, kg:harvestKg, price, rev, profit}]);
+    push(`💰 ${harvestKg.toLocaleString()} kg × ${fmt(price)} = ${fmt(rev)}`, "g");
+    push(`📊 Laba musim ini: ${fmt(profit)}`, profit > 0 ? "g" : "w");
+    if (nm < 500_000) { setMoney(nm); setScreen("over"); return; }
+    const ns = season + 1;
+    setSeason(ns); setMoney(nm); setSpent(0); setPhase("landPrep"); setWeek(0);
+    setHealth(100); setSeedId(null); setBaseY(0); setWaterCm(3);
+    setNutN(40); setNutP(40); setNutK(40); setBlast(20); setYMult(1.0);
+    setHarvestKg(0); setWeed(50); setAgroLog([]); setPest(null); setPestOK(true);
+    push(`🌱 Musim ${ns} dimulai! Modal: ${fmt(nm)}`, "g");
+  };
+
+  /* ═══════════════════════ RENDER ═══════════════════════ */
+
+  const STEPS = ["landPrep","seedSelect","planting","maintenance","harvest","selling"];
+  const SLABELS = ["Lahan","Benih","Tanam","Rawat","Panen","Jual"];
+  const phIdx = STEPS.indexOf(phase);
+  const logC  = {i:"#94a3b8",g:"#4ade80",w:"#fbbf24",e:"#f87171",c:"#fb923c"};
+
+  /* ── INTRO ── */
+  if (screen === "intro") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#052e16,#14532d,#166534)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+      <div style={{background:"white",borderRadius:"20px",padding:"32px 24px",maxWidth:"460px",width:"100%",boxShadow:"0 20px 48px rgba(0,0,0,.3)"}}>
+        <div style={{textAlign:"center",marginBottom:"20px"}}>
+          <div style={{fontSize:"52px",marginBottom:"6px"}}>🌾</div>
+          <h1 style={{margin:"0 0 4px",fontSize:"22px",fontWeight:"800",color:"#14532d"}}>Simulator Petani Padi</h1>
+          <p style={{margin:"0 0 2px",fontSize:"12px",fontWeight:"700",color:"#16a34a",letterSpacing:".3px"}}>EDISI ILMIAH — Berbasis Ilmu Agronomi Nyata</p>
+          <p style={{margin:0,color:"#6b7280",fontSize:"13px",lineHeight:"1.7"}}>Kelola sawah 1 ha. Setiap keputusan salah langsung berdampak ke hasil panen!</p>
+        </div>
+        <div style={{background:"#fef9c3",border:"1px solid #fde047",borderRadius:"12px",padding:"12px",marginBottom:"12px",fontSize:"12px",color:"#713f12",lineHeight:"1.9"}}>
+          <strong>🔬 Prinsip Agronomi yang Aktif:</strong><br/>
+          • <strong>Fase Pembungaan (Mg 9):</strong> Air wajib 5–7 cm. Semprot pestisida = −20–27% hasil!<br/>
+          • <strong>Pupuk saat kering:</strong> fertilizer burn — akar rusak, pupuk hampir sia-sia<br/>
+          • <strong>N berlebih:</strong> blast risk melonjak — ledakan penyakit tak terduga<br/>
+          • <strong>Panen terlambat:</strong> gabah rontok tiap minggu — kerugian kumulatif<br/>
+          • <strong>Jenis pestisida salah:</strong> uang terbuang, hama tetap aktif
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
+          {[["💰 Modal",fmt(INIT_MONEY)],["🌾 Lahan","1 Hektar"],["⏱️ Durasi","12 Mg + Panen"],["🎯 Target","Laba Maksimal"]].map(([l,v])=>(
+            <div key={l} style={{background:"#f0fdf4",border:"0.5px solid #d1fae5",borderRadius:"8px",padding:"9px 11px"}}>
+              <div style={{fontSize:"11px",color:"#6b7280"}}>{l}</div>
+              <div style={{fontSize:"14px",fontWeight:"700",color:"#14532d"}}>{v}</div>
             </div>
-            <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:"12px",
-              padding:"14px", marginBottom:"16px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px" }}>
-              {[["💰 Modal Awal",fmt(INITIAL_MONEY)],["🌾 Lahan",`${LAND} Hektar`],["🌱 Komoditas","Padi"],["⏱️ Per Musim","~16 Minggu"]].map(([l,v]) => (
-                <div key={l} style={{ background:"white", borderRadius:"8px", padding:"10px 12px", border:"0.5px solid #d1fae5" }}>
-                  <div style={{ fontSize:"11px", color:"#6b7280" }}>{l}</div>
-                  <div style={{ fontSize:"15px", fontWeight:"700", color:"#14532d" }}>{v}</div>
-                </div>
-              ))}
+          ))}
+        </div>
+        <button onClick={()=>setScreen("game")}
+          style={{background:"#16a34a",color:"white",border:"none",borderRadius:"12px",padding:"13px",width:"100%",fontSize:"15px",fontWeight:"700",cursor:"pointer"}}>
+          🚜 Mulai Bertani!
+        </button>
+      </div>
+    </div>
+  );
+
+  /* ── GAME OVER ── */
+  if (screen === "over") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#450a0a,#7f1d1d)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+      <div style={{background:"white",borderRadius:"20px",padding:"32px 24px",maxWidth:"460px",width:"100%"}}>
+        <div style={{textAlign:"center",marginBottom:"16px"}}>
+          <div style={{fontSize:"50px",marginBottom:"6px"}}>💸</div>
+          <h1 style={{fontSize:"20px",fontWeight:"800",color:"#991b1b",margin:"0 0 6px"}}>Modal Habis!</h1>
+          <p style={{color:"#6b7280",fontSize:"13px",lineHeight:"1.6"}}>Usaha tani bangkrut. Pelajari prinsip agronomi dan coba lagi!</p>
+        </div>
+        {history.length > 0 && (
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"10px",padding:"12px",marginBottom:"16px"}}>
+            <div style={{fontWeight:"700",fontSize:"12px",color:"#991b1b",marginBottom:"8px"}}>📊 Riwayat Panen:</div>
+            {history.map((h,i) => (
+              <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:"13px",padding:"4px 0",borderTop:i>0?"0.5px solid #fecaca":"none"}}>
+                <span>Musim {h.season}: {h.kg.toLocaleString()} kg</span>
+                <span style={{fontWeight:"700",color:h.profit>0?"#16a34a":"#dc2626"}}>{h.profit>0?"+":""}{fmt(h.profit)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <button onClick={()=>{
+          setScreen("game"); setSeason(1); setMoney(INIT_MONEY); setSpent(0);
+          setPhase("landPrep"); setWeek(0); setHealth(100); setSeedId(null); setBaseY(0);
+          setWaterCm(3); setNutN(40); setNutP(40); setNutK(40); setBlast(20);
+          setYMult(1.0); setHarvestKg(0); setWeed(50); setAgroLog([]);
+          setPest(null); setPestOK(true); setHistory([]); setLog([]);
+        }} style={{background:"#dc2626",color:"white",border:"none",borderRadius:"12px",padding:"12px",width:"100%",fontSize:"14px",fontWeight:"700",cursor:"pointer"}}>
+          🔄 Mulai Ulang
+        </button>
+      </div>
+    </div>
+  );
+
+  /* ── MAIN GAME ── */
+  return (
+    <div style={{background:"#f0fdf4",minHeight:"100vh",maxWidth:"700px",margin:"0 auto",paddingBottom:"32px"}}>
+
+      {/* HEADER */}
+      <div style={{background:"linear-gradient(135deg,#14532d,#15803d)",padding:"13px 18px 15px",color:"white"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"11px"}}>
+          <div>
+            <div style={{fontSize:"11px",opacity:.7,textTransform:"uppercase",letterSpacing:".6px"}}>Simulator Petani Padi Ilmiah</div>
+            <div style={{fontSize:"18px",fontWeight:"800",marginTop:"1px"}}>
+              Musim {season} — {inMaint ? `Minggu ${week}/12` : SLABELS[phIdx]}
             </div>
-            <div style={{ background:"#fefce8", border:"1px solid #fef08a", borderRadius:"10px",
-              padding:"12px 14px", marginBottom:"20px", fontSize:"13px", color:"#713f12", lineHeight:"1.6" }}>
-              ⚠️ <strong>Tantangan:</strong> Hama wereng, banjir, kekeringan, dan fluktuasi harga gabah
-              akan menguji kemampuan manajemen Anda!
-            </div>
-            <button onClick={() => setScreen("game")}
-              style={{ background:"#16a34a", color:"white", border:"none", borderRadius:"12px",
-                padding:"16px", width:"100%", fontSize:"16px", fontWeight:"700", cursor:"pointer" }}>
-              🚜 Mulai Bertani!
-            </button>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:"11px",opacity:.7}}>Modal</div>
+            <div style={{fontSize:"20px",fontWeight:"800",color:money>2_000_000?"#86efac":money>800_000?"#fde68a":"#fca5a5"}}>{fmt(money)}</div>
           </div>
         </div>
-      );
-
-      /* ── GAME OVER ── */
-      if (screen === "over") return (
-        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#450a0a,#7f1d1d)",
-          display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
-          <div style={{ background:"white", borderRadius:"20px", padding:"36px 28px",
-            maxWidth:"460px", width:"100%", boxShadow:"0 20px 48px rgba(0,0,0,.32)" }}>
-            <div style={{ textAlign:"center", marginBottom:"20px" }}>
-              <div style={{ fontSize:"56px", marginBottom:"8px" }}>💸</div>
-              <h1 style={{ margin:"0 0 8px", fontSize:"22px", fontWeight:"800", color:"#991b1b" }}>Modal Habis!</h1>
-              <p style={{ margin:0, color:"#6b7280", fontSize:"14px", lineHeight:"1.6" }}>
-                Usaha tani Anda bangkrut. Kelola biaya lebih cermat dan tangani hama sejak dini!
-              </p>
+        <div style={{display:"flex",gap:"4px"}}>
+          {SLABELS.map((l,i) => (
+            <div key={l} style={{flex:1,textAlign:"center"}}>
+              <div style={{height:"3px",borderRadius:"2px",marginBottom:"3px",transition:"background .3s",background:i<=phIdx?"#86efac":"rgba(255,255,255,.25)"}}/>
+              <div style={{fontSize:"10px",opacity:i<=phIdx?1:.45,fontWeight:i===phIdx?700:400}}>{l}</div>
             </div>
-            {history.length > 0 && (
-              <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:"12px",
-                padding:"14px", marginBottom:"20px" }}>
-                <div style={{ fontWeight:"700", fontSize:"13px", color:"#991b1b", marginBottom:"10px" }}>
-                  📊 Riwayat Panen:
-                </div>
-                {history.map((h, i) => (
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:"13px",
-                    padding:"5px 0", borderBottom:i<history.length-1?"0.5px solid #fecaca":"none", color:"#374151" }}>
-                    <span>Musim {h.season}: {h.kg.toLocaleString()} kg</span>
-                    <span style={{ fontWeight:"600", color:h.profit>0?"#16a34a":"#dc2626" }}>
-                      {h.profit > 0 ? "+" : ""}{fmt(h.profit)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button onClick={() => {
-              setScreen("game"); setMoney(INITIAL_MONEY); setSeason(1); setWeek(1); setSpent(0);
-              setPhase("landPrep"); setMWeek(0); setHealth(100); setSeedId(null); setBaseYield(0);
-              setFertDone(false); setBadEv(null); setEvDone(true); setHarvestKg(0); setHistory([]); setLog([]);
-            }} style={{ background:"#dc2626", color:"white", border:"none", borderRadius:"12px",
-              padding:"14px", width:"100%", fontSize:"15px", fontWeight:"700", cursor:"pointer" }}>
-              🔄 Mulai Ulang
-            </button>
-          </div>
+          ))}
         </div>
-      );
+      </div>
 
-      /* ── MAIN GAME ── */
-      return (
-        <div style={{ background:"#f0fdf4", minHeight:"100vh", maxWidth:"700px", margin:"0 auto", paddingBottom:"28px" }}>
-
-          {/* HEADER */}
-          <div style={{ background:"linear-gradient(135deg,#14532d,#15803d)", padding:"16px 20px 18px", color:"white" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"14px" }}>
-              <div>
-                <div style={{ fontSize:"11px", opacity:.7, textTransform:"uppercase", letterSpacing:".6px" }}>
-                  Simulator Petani Padi
-                </div>
-                <div style={{ fontSize:"20px", fontWeight:"800", marginTop:"2px" }}>
-                  Musim {season} — Minggu {week}
-                </div>
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontSize:"11px", opacity:.7 }}>Modal</div>
-                <div style={{ fontSize:"22px", fontWeight:"800",
-                  color: money>2000000?"#86efac":money>800000?"#fde68a":"#fca5a5" }}>
-                  {fmt(money)}
-                </div>
-              </div>
-            </div>
-            <div style={{ display:"flex", gap:"4px" }}>
-              {["Lahan","Benih","Tanam","Rawat","Panen","Jual"].map((l, i) => (
-                <div key={l} style={{ flex:1, textAlign:"center" }}>
-                  <div style={{ height:"3px", borderRadius:"2px", marginBottom:"4px", transition:"background .3s",
-                    background: i<=phaseIdx ? "#86efac" : "rgba(255,255,255,.25)" }} />
-                  <div style={{ fontSize:"10px", opacity:i<=phaseIdx?1:.5, fontWeight:i===phaseIdx?700:400 }}>{l}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* FIELD + STATUS */}
-          <div style={{ margin:"12px 12px 0", background:"white", borderRadius:"14px",
-            border:"0.5px solid #e5e7eb", padding:"14px", display:"flex", gap:"14px", alignItems:"stretch" }}>
-            <div style={{ flex:"0 0 46%" }}>
-              <FieldGrid phase={phase} mWeek={mWeek} health={health} />
-              <div style={{ textAlign:"center", fontSize:"10px", color:"#9ca3af", marginTop:"6px" }}>
-                {phase==="landPrep"||phase==="seedSelect" ? "🟫 Lahan belum ditanami"
-                  : phase==="planting"   ? "🔵 Sawah digenangi air"
-                  : mWeek<3             ? "🟢 Bibit tumbuh"
-                  : mWeek<6             ? "🌿 Fase vegetatif"
-                  : phase==="selling"   ? "📦 Selesai panen"
-                  : "🌾 Padi matang"}
-              </div>
-            </div>
-            <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", gap:"8px" }}>
-              <div style={{ fontSize:"13px", fontWeight:"700", color:"#14532d" }}>
-                📍 {PHASE_LABELS[phase]}
-              </div>
-              {showCrop ? (
-                <>
-                  <div>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:"12px", color:"#6b7280", marginBottom:"4px" }}>
-                      <span>❤️ Kesehatan Tanaman</span>
-                      <span style={{ fontWeight:"700", color:hColor }}>{health}%</span>
-                    </div>
-                    <div style={{ background:"#e5e7eb", borderRadius:"999px", height:"6px" }}>
-                      <div style={{ background:hColor, borderRadius:"999px", height:"6px",
-                        width:`${health}%`, transition:"width .5s,background .3s" }} />
-                    </div>
-                  </div>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px" }}>
-                    <div style={{ background:"#f0fdf4", borderRadius:"8px", padding:"7px 10px" }}>
-                      <div style={{ fontSize:"10px", color:"#6b7280" }}>Est. Panen</div>
-                      <div style={{ fontSize:"14px", fontWeight:"700", color:"#14532d" }}>{estYield.toLocaleString()} kg</div>
-                    </div>
-                    <div style={{ background:"#fffbeb", borderRadius:"8px", padding:"7px 10px" }}>
-                      <div style={{ fontSize:"10px", color:"#6b7280" }}>Harga Gabah</div>
-                      <div style={{ fontSize:"14px", fontWeight:"700", color:"#92400e" }}>{fmt(mktPrice)}/kg</div>
-                    </div>
-                  </div>
-                  <div style={{ background:"#f9fafb", borderRadius:"8px", padding:"7px 10px",
-                    fontSize:"11px", display:"flex", justifyContent:"space-between" }}>
-                    <span style={{ color:"#6b7280" }}>💸 <span style={{ color:"#ef4444", fontWeight:"600" }}>{fmt(spent)}</span></span>
-                    <span style={{ color:"#6b7280" }}>📈 <span style={{
-                      color: estYield*mktPrice>spent ? "#16a34a" : "#ef4444", fontWeight:"600" }}>
-                      {fmt(estYield * mktPrice - spent)}
-                    </span></span>
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize:"13px", color:"#6b7280", lineHeight:"1.6", flex:1, display:"flex", alignItems:"center" }}>
-                  {phase==="landPrep"   && "Siapkan lahan untuk musim tanam baru. Pilih metode pengolahan yang sesuai anggaran."}
-                  {phase==="seedSelect" && "Lahan siap! Pilih varietas benih. Varietas unggul = hasil lebih tinggi."}
-                  {phase==="planting"   && `Benih ${seed?.name||"..."} siap ditanam di ${LAND} ha.`}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* EVENT ALERT */}
-          {badEv && !evDone && (
-            <div style={{ margin:"10px 12px 0", background:"#fef3c7", border:"2px solid #f59e0b",
-              borderRadius:"14px", padding:"14px" }}>
-              <div style={{ fontWeight:"700", color:"#92400e", fontSize:"16px", marginBottom:"6px" }}>
-                {badEv.emoji} {badEv.name}!
-              </div>
-              <div style={{ fontSize:"13px", color:"#78350f", marginBottom:"12px" }}>
-                Risiko jika diabaikan: <strong>-{badEv.hDmg}% kesehatan</strong> dan <strong>-{badEv.yDmg.toLocaleString()} kg</strong> potensi panen.
-              </div>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
-                {badEv.fix?.useSprays && SPRAYS.map(sp => (
-                  <Btn key={sp.id} onClick={() => doSpray(sp.id)}>
-                    {sp.name} ({fmt(sp.costHa * LAND)}) · {Math.round(sp.eff * 100)}%
-                  </Btn>
-                ))}
-                {badEv.fix && !badEv.fix.useSprays && (
-                  <Btn onClick={doFix} variant="blue">
-                    {badEv.fix.name} ({fmt(badEv.fix.costHa * LAND)})
-                  </Btn>
-                )}
-                <Btn onClick={doIgnore} variant="gray">
-                  Abaikan{!badEv.fix ? " (tak bisa ditangani)" : ""}
-                </Btn>
-              </div>
+      {/* FIELD + STATUS PANEL */}
+      <div style={{margin:"10px 12px 0",background:"white",borderRadius:"14px",border:"0.5px solid #e5e7eb",padding:"12px",display:"flex",gap:"12px"}}>
+        <div style={{flex:"0 0 44%"}}>
+          <FieldGrid stage={inMaint?stage:null} waterCm={waterCm} health={health} blastRisk={blastRisk}/>
+          {inMaint && si && (
+            <div style={{marginTop:"5px",background:si.superCrit?"#fef2f2":si.crit?"#fef3c7":"#f0fdf4",
+              border:`1px solid ${si.superCrit?"#fca5a5":si.crit?"#fde68a":"#bbf7d0"}`,
+              borderRadius:"6px",padding:"5px 8px",fontSize:"11px",
+              color:si.superCrit?"#991b1b":si.crit?"#92400e":"#14532d"}}>
+              {si.emoji} <strong>{si.name}</strong> (Mg {si.wks})<br/>
+              <span style={{opacity:.85,fontSize:"10px"}}>{si.tip}</span>
             </div>
           )}
-
-          {/* MAIN ACTION PANEL */}
-          <div style={{ margin:"10px 12px 0", background:"white", borderRadius:"14px",
-            border:"0.5px solid #e5e7eb", padding:"16px" }}>
-
-            {/* LAND PREP */}
-            {phase === "landPrep" && <>
-              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>🚜 Pengolahan Lahan</div>
-              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
-                Siapkan lahan {LAND} hektar sebelum musim tanam. Pilih metode sesuai anggaran.
-              </p>
-              {PREPS.map(p => (
-                <SelCard key={p.id} onClick={() => doLandPrep(p.id)}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <span style={{ fontWeight:"700", color:"#14532d", fontSize:"14px" }}>{p.name}</span>
-                    <span style={{ background:"#14532d", color:"white", borderRadius:"6px",
-                      padding:"2px 10px", fontSize:"12px", fontWeight:"600" }}>{fmt(p.cost)}</span>
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          {inMaint ? (
+            <>
+              <StatusBar value={health}  color={hCol}     label="❤️ Kesehatan Tanaman"/>
+              <div style={{marginBottom:"5px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#6b7280",marginBottom:"2px"}}>
+                  <span>💧 Air{si ? ` (opt ${si.wMin}–${si.wMax}cm)` : ""}</span>
+                  <span style={{fontWeight:"700",color:wCol}}>{waterCm} cm</span>
+                </div>
+                <div style={{background:"#e5e7eb",borderRadius:"999px",height:"5px"}}>
+                  <div style={{background:wCol,borderRadius:"999px",height:"5px",width:`${Math.min(100,(waterCm/15)*100)}%`,transition:"width .4s"}}/>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"4px",marginBottom:"5px"}}>
+                {[["N",nutN,"#4ade80"],["P",nutP,"#60a5fa"],["K",nutK,"#f59e0b"]].map(([l,v,c]) => (
+                  <div key={l} style={{background:"#f9fafb",borderRadius:"6px",padding:"4px 5px",textAlign:"center"}}>
+                    <div style={{fontSize:"10px",color:"#6b7280"}}>{l} Hara</div>
+                    <div style={{fontSize:"13px",fontWeight:"700",color:v<20?"#ef4444":c}}>{Math.round(v)}%</div>
                   </div>
-                  <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"3px" }}>{p.desc}</div>
-                </SelCard>
-              ))}
-            </>}
+                ))}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px"}}>
+                <div style={{background:"#fef9c3",borderRadius:"6px",padding:"4px 7px"}}>
+                  <div style={{fontSize:"10px",color:"#6b7280"}}>🍄 Blast Risk</div>
+                  <div style={{fontSize:"13px",fontWeight:"700",color:blastRisk>60?"#ef4444":blastRisk>40?"#f59e0b":"#22c55e"}}>{Math.round(blastRisk)}%</div>
+                </div>
+                <div style={{background:"#f0fdf4",borderRadius:"6px",padding:"4px 7px"}}>
+                  <div style={{fontSize:"10px",color:"#6b7280"}}>📈 Est. Panen</div>
+                  <div style={{fontSize:"13px",fontWeight:"700",color:"#14532d"}}>{estY.toLocaleString()} kg</div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{fontSize:"12px",color:"#6b7280",lineHeight:"1.8"}}>
+              {phase==="landPrep"   && "Kualitas pengolahan lahan menentukan tekanan gulma & pemerataan irigasi sepanjang musim."}
+              {phase==="seedSelect" && "Varietas tahan blast = blast risk tidak mudah meledak meski N cukup tinggi."}
+              {phase==="planting"   && `Benih ${seed?.name||"..."} siap. Sawah digenangi 4 cm setelah tanam.`}
+              {phase==="harvest"    && `Estimasi panen: ${estY.toLocaleString()} kg. Waktu & metode panen menentukan kualitas akhir.`}
+              {phase==="selling"    && `${harvestKg.toLocaleString()} kg gabah siap jual — Harga pasar: ${fmt(mktPrice)}/kg`}
+            </div>
+          )}
+        </div>
+      </div>
 
-            {/* SEED SELECT */}
-            {phase === "seedSelect" && <>
-              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>🌾 Pilih Varietas Benih Padi</div>
-              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
-                Biaya per hektar. Varietas unggul memberikan hasil lebih tinggi dan ketahanan hama lebih baik.
-              </p>
-              {SEEDS.map(s => (
-                <SelCard key={s.id} onClick={() => doBuySeed(s.id)}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                      <span style={{ fontWeight:"700", color:"#14532d", fontSize:"14px" }}>{s.name}</span>
-                      <span style={{ background:s.tagBg, color:s.tagTx, borderRadius:"4px",
-                        padding:"1px 7px", fontSize:"11px", fontWeight:"700" }}>{s.tag}</span>
-                    </div>
-                    <span style={{ fontWeight:"600", color:"#374151", fontSize:"13px" }}>{fmt(s.costHa)}/ha</span>
-                  </div>
-                  <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"4px" }}>
-                    Potensi: <strong>{s.baseYield.toLocaleString()} kg/ha</strong> · Ketahanan hama: <strong>{Math.round(s.resist * 100)}%</strong>
-                  </div>
-                </SelCard>
-              ))}
-            </>}
+      {/* AGRONOMY REPORT */}
+      {agroLog.length > 0 && (
+        <div style={{margin:"8px 12px 0"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#374151",marginBottom:"5px",textTransform:"uppercase",letterSpacing:".5px"}}>📊 Laporan Agronomi:</div>
+          {agroLog.map((a,i) => <AgroAlert key={a.k||i} msg={a.msg} sev={a.sev}/>)}
+        </div>
+      )}
 
-            {/* PLANTING */}
-            {phase === "planting" && (
-              <div style={{ textAlign:"center", padding:"20px 0" }}>
-                <div style={{ fontSize:"52px", marginBottom:"10px" }}>🌱</div>
-                <div style={{ fontWeight:"700", fontSize:"16px", color:"#14532d", marginBottom:"6px" }}>Lahan Siap Tanam!</div>
-                <p style={{ color:"#6b7280", fontSize:"14px", margin:"0 0 20px", lineHeight:"1.6" }}>
-                  Varietas <strong>{seed?.name}</strong> akan ditanam di {LAND} ha.<br />
-                  Estimasi potensi awal: <strong>{baseYield.toLocaleString()} kg</strong>
-                </p>
-                <Btn onClick={doPlant}>🌱 Tanam Sekarang!</Btn>
+      {/* PEST ALERT */}
+      {pest && !pestOK && inMaint && (
+        <div style={{margin:"8px 12px 0",background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:"12px",padding:"12px"}}>
+          <div style={{fontWeight:"700",color:"#92400e",fontSize:"14px",marginBottom:"3px"}}>{pest.em} {pest.name}!</div>
+          <div style={{fontSize:"12px",color:"#78350f",marginBottom:"8px",lineHeight:"1.55"}}>
+            {pest.info}<br/>
+            Jika diabaikan: <strong>−{pest.hD}% kesehatan</strong>, <strong>−{pest.yL.toLocaleString()} kg</strong> panen
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+            {pest.kind === "rodent" ? (
+              <Btn onClick={doTrap} v="amber">🪤 Pasang Perangkap ({fmt(pest.fc)})</Btn>
+            ) : (
+              SPRAYS.filter(sp => sp.type === pest.kind).map(sp => (
+                <Btn key={sp.id} onClick={() => doSpray(sp.id, true)} v={sp.type==="fungal"?"teal":"green"} sm>
+                  {sp.name} ({fmt(sp.cost)}) — {Math.round(sp.eff*100)}% eff
+                </Btn>
+              ))
+            )}
+            <Btn onClick={doIgnore} v="gray" sm>Abaikan</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* MAIN ACTION PANEL */}
+      <div style={{margin:"8px 12px 0",background:"white",borderRadius:"14px",border:"0.5px solid #e5e7eb",padding:"14px"}}>
+
+        {/* ── LAND PREP ── */}
+        {phase === "landPrep" && (
+          <>
+            <div style={{fontWeight:"700",fontSize:"14px",color:"#14532d",marginBottom:"4px"}}>🚜 Pengolahan Lahan</div>
+            <p style={{fontSize:"12px",color:"#6b7280",margin:"0 0 10px",lineHeight:"1.6"}}>Kualitas olah tanah menentukan tekanan gulma dan kemerataan irigasi sepanjang musim tanam.</p>
+            {PREPS.map(p => (
+              <SelCard key={p.id} onClick={() => doPrep(p.id)}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:"700",color:"#14532d",fontSize:"13px"}}>{p.name}</span>
+                  <span style={{background:"#14532d",color:"white",borderRadius:"5px",padding:"2px 8px",fontSize:"12px",fontWeight:"600"}}>{fmt(p.cost)}</span>
+                </div>
+                <div style={{fontSize:"11px",color:"#6b7280",marginTop:"2px"}}>{p.desc}</div>
+                <div style={{fontSize:"11px",color:"#16a34a",marginTop:"2px"}}>Gulma berkurang {Math.round(p.weedRed*100)}% · Tanah +{p.soilBonus} poin</div>
+              </SelCard>
+            ))}
+          </>
+        )}
+
+        {/* ── SEED SELECT ── */}
+        {phase === "seedSelect" && (
+          <>
+            <div style={{fontWeight:"700",fontSize:"14px",color:"#14532d",marginBottom:"4px"}}>🌾 Pilih Varietas Benih</div>
+            <p style={{fontSize:"12px",color:"#6b7280",margin:"0 0 10px",lineHeight:"1.6"}}>Ketahanan blast tinggi = blast risk tidak mudah meledak. Hibrida butuh nutrisi lebih intensif.</p>
+            {SEEDS.map(s => (
+              <SelCard key={s.id} onClick={() => doSeed(s.id)}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"7px"}}>
+                    <span style={{fontWeight:"700",color:"#14532d",fontSize:"13px"}}>{s.name}</span>
+                    <span style={{background:s.tB,color:s.tC,borderRadius:"4px",padding:"1px 6px",fontSize:"10px",fontWeight:"700"}}>{s.tag}</span>
+                  </div>
+                  <span style={{fontSize:"12px",color:"#6b7280"}}>{fmt(s.costHa)}/ha</span>
+                </div>
+                <div style={{fontSize:"11px",color:"#6b7280",marginTop:"3px"}}>
+                  Potensi: <strong>{s.by.toLocaleString()} kg/ha</strong> · Ketahanan blast: <strong>{Math.round(s.br*100)}%</strong>
+                </div>
+                <div style={{fontSize:"11px",color:"#16a34a",marginTop:"1px"}}>{s.desc}</div>
+              </SelCard>
+            ))}
+          </>
+        )}
+
+        {/* ── PLANTING ── */}
+        {phase === "planting" && (
+          <div style={{textAlign:"center",padding:"18px 0"}}>
+            <div style={{fontSize:"44px",marginBottom:"8px"}}>🌱</div>
+            <div style={{fontWeight:"700",fontSize:"15px",color:"#14532d",marginBottom:"5px"}}>Siap Tanam!</div>
+            <p style={{color:"#6b7280",fontSize:"13px",margin:"0 0 14px",lineHeight:"1.6"}}>
+              Varietas <strong>{seed?.name}</strong> · Potensi awal: <strong>{baseY.toLocaleString()} kg/ha</strong><br/>
+              Sawah akan digenangi 4 cm setelah tanam.
+            </p>
+            <Btn onClick={doPlant}>🌱 Tanam Sekarang!</Btn>
+          </div>
+        )}
+
+        {/* ── WEEKLY MAINTENANCE ── */}
+        {inMaint && (
+          <>
+            {/* Weather banner */}
+            {weather && (
+              <div style={{background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:"8px",padding:"7px 10px",marginBottom:"10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:"13px",fontWeight:"700",color:"#0369a1"}}>{weather.em} {weather.name}</span>
+                <span style={{fontSize:"11px",color:"#0284c7"}}>
+                  Air {weather.wD > 0 ? "+" : ""}{weather.wD} cm
+                  {weather.fertWash && <span style={{color:"#dc2626",fontWeight:"700"}}> · ⚠️ Berisiko pupuk hanyut!</span>}
+                </span>
               </div>
             )}
 
-            {/* MAINTENANCE */}
-            {phase === "maintenance" && <>
-              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>
-                🌿 Perawatan Minggu {mWeek + 1} / 8
+            {/* WATER MANAGEMENT */}
+            <div style={{marginBottom:"12px"}}>
+              <div style={{fontSize:"12px",fontWeight:"700",color:"#1e40af",marginBottom:"5px"}}>
+                💧 Kelola Air — saat ini{" "}
+                <span style={{color:wCol,fontWeight:"800"}}>{waterCm} cm</span>
+                {si && <span style={{fontWeight:"400",color:"#6b7280",fontSize:"11px"}}> · optimal {si.wMin}–{si.wMax} cm</span>}
               </div>
-              <div style={{ background:"#e5e7eb", borderRadius:"999px", height:"5px", margin:"8px 0 14px" }}>
-                <div style={{ background:"#16a34a", borderRadius:"999px", height:"5px",
-                  width:`${((mWeek + 1) / 8) * 100}%`, transition:"width .4s" }} />
+              <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+                {[
+                  {id:"add5",    label:"➕ +5 cm (60rb)", col:"#1d4ed8"},
+                  {id:"add3",    label:"➕ +3 cm (40rb)", col:"#2563eb"},
+                  {id:"maintain",label:"📌 Biarkan",     col:"#6b7280"},
+                  {id:"drain3",  label:"➖ Kurangi 4 cm",col:"#d97706"},
+                  {id:"drainAll",label:"🔴 Keringkan",   col:"#dc2626"},
+                ].map(a => (
+                  <button key={a.id} onClick={() => setWaterAct(a.id)}
+                    style={{background:waterAct===a.id?a.col:"#f9fafb",color:waterAct===a.id?"white":"#374151",
+                      border:`1.5px solid ${waterAct===a.id?a.col:"#e5e7eb"}`,borderRadius:"7px",
+                      padding:"5px 9px",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>
+                    {a.label}
+                  </button>
+                ))}
               </div>
-              <div style={{ marginBottom:"14px" }}>
-                <div style={{ fontSize:"13px", fontWeight:"600", color:"#374151", marginBottom:"8px" }}>
-                  💊 Pemupukan {fertDone ? "✅ Sudah dilakukan" : "(opsional, dianjurkan)"}
-                </div>
-                {!fertDone && (
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"8px" }}>
-                    {FERTS.map(f => (
-                      <div key={f.id} onClick={() => doFertilize(f.id)}
-                        style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:"8px",
-                          padding:"10px 8px", cursor:"pointer", textAlign:"center", transition:"background .15s" }}
-                        onMouseOver={e => e.currentTarget.style.background="#dcfce7"}
-                        onMouseOut={e  => e.currentTarget.style.background="#f0fdf4"}>
-                        <div style={{ fontWeight:"700", fontSize:"13px", color:"#14532d" }}>{f.emoji} {f.name}</div>
-                        <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"2px" }}>{fmt(f.costHa * LAND)}</div>
-                        <div style={{ fontSize:"11px", color:"#16a34a", marginTop:"2px" }}>+{f.yPlus} kg · +{f.hPlus}❤️</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <Btn onClick={doNextWeek} disabled={!evDone} variant={evDone?"blue":"gray"} full>
-                {!evDone
-                  ? "⚠️ Tangani kejadian terlebih dahulu"
-                  : mWeek < 7
-                    ? "⏩ Lanjut ke Minggu Berikutnya"
-                    : "🌾 Padi Sudah Matang — Panen Sekarang!"}
-              </Btn>
-            </>}
-
-            {/* HARVEST */}
-            {phase === "harvest" && <>
-              <div style={{ fontWeight:"700", fontSize:"15px", color:"#92400e", marginBottom:"4px" }}>🌾 Panen Raya!</div>
-              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
-                Estimasi hasil: <strong>{estYield.toLocaleString()} kg</strong>. Pilih metode panen:
-              </p>
-              {HARVEST_METHODS.map(hm => (
-                <SelCard key={hm.id} onClick={() => doHarvest(hm.id)}
-                  border="#fcd34d" bg="#fffbeb" hover="#fef3c7">
-                  <div style={{ display:"flex", justifyContent:"space-between" }}>
-                    <span style={{ fontWeight:"700", color:"#92400e", fontSize:"14px" }}>{hm.name}</span>
-                    <span style={{ fontSize:"12px", color:"#6b7280" }}>{fmt(hm.costHa * LAND)}</span>
-                  </div>
-                  <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"3px" }}>
-                    {hm.desc} · Efisiensi {Math.round(hm.eff * 100)}% → hasil <strong>{Math.round(estYield * hm.eff).toLocaleString()} kg</strong>
-                  </div>
-                </SelCard>
-              ))}
-            </>}
-
-            {/* SELLING */}
-            {phase === "selling" && <>
-              <div style={{ fontWeight:"700", fontSize:"15px", color:"#14532d", marginBottom:"4px" }}>💰 Jual Hasil Panen</div>
-              <p style={{ margin:"0 0 14px", fontSize:"13px", color:"#6b7280" }}>
-                <strong>{harvestKg.toLocaleString()} kg</strong> gabah siap jual · Harga pasar: <strong>{fmt(mktPrice)}/kg</strong>
-              </p>
-              {SELL_OPTS.map(so => {
-                const price   = Math.round(mktPrice * so.mod);
-                const total   = harvestKg * price;
-                const profit  = total - spent;
+              {/* Water preview */}
+              {waterAct !== "maintain" && si && (() => {
+                const pw = waterAct==="add5" ? Math.min(20,waterCm+5) :
+                           waterAct==="add3" ? Math.min(20,waterCm+3) :
+                           waterAct==="drain3" ? Math.max(0,waterCm-4) : 0;
+                const ok = pw >= si.wMin && pw <= si.wMax;
+                const col = ok ? "#16a34a" : pw < si.wMin ? "#ef4444" : "#f59e0b";
                 return (
-                  <SelCard key={so.id} onClick={() => doSell(so.mod)}
-                    border="#c4b5fd" bg="#f5f3ff" hover="#ede9fe">
-                    {so.badge && (
-                      <span style={{ position:"absolute", top:"10px", right:"12px",
-                        background:so.badgeBg, color:"white", borderRadius:"4px",
-                        padding:"2px 7px", fontSize:"11px", fontWeight:"700" }}>{so.badge}</span>
-                    )}
-                    <div style={{ fontWeight:"700", color:"#5b21b6", fontSize:"14px" }}>{so.name}</div>
-                    <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"2px" }}>
-                      {so.desc} · {fmt(price)}/kg
-                    </div>
-                    <div style={{ marginTop:"6px", display:"flex", gap:"14px", fontSize:"12px" }}>
-                      <span>Total: <strong>{fmt(total)}</strong></span>
-                      <span style={{ color:profit>0?"#16a34a":"#dc2626", fontWeight:"700" }}>
-                        Laba: {profit > 0 ? "+" : ""}{fmt(profit)}
-                      </span>
-                    </div>
-                  </SelCard>
+                  <div style={{fontSize:"11px",marginTop:"4px",color:col}}>
+                    → Preview: {pw} cm{" "}
+                    {ok ? "✅ Optimal" : pw < si.wMin ? `⚠️ Masih kurang (min ${si.wMin} cm)` : `⚠️ Terlalu banyak (maks ${si.wMax} cm)`}
+                    {stage==="pembungaan" && pw < si.wMin && <strong> — BAHAYA KRITIS!</strong>}
+                  </div>
                 );
-              })}
-              {history.length > 0 && (
-                <div style={{ marginTop:"14px", background:"#f9fafb", borderRadius:"10px",
-                  padding:"12px", fontSize:"12px", color:"#374151" }}>
-                  <strong style={{ fontSize:"13px" }}>📊 Riwayat Musim:</strong>
-                  {history.map((h, i) => (
-                    <div key={i} style={{ display:"flex", justifyContent:"space-between", marginTop:"5px",
-                      padding:"4px 0", borderTop:"0.5px solid #e5e7eb" }}>
-                      <span>Musim {h.season}: {h.kg.toLocaleString()} kg</span>
-                      <span style={{ fontWeight:"700", color:h.profit>0?"#16a34a":"#dc2626" }}>
-                        {h.profit > 0 ? "+" : ""}{fmt(h.profit)}
-                      </span>
-                    </div>
-                  ))}
+              })()}
+            </div>
+
+            {/* FERTILIZER */}
+            <div style={{marginBottom:"12px"}}>
+              <div style={{fontSize:"12px",fontWeight:"700",color:"#16a34a",marginBottom:"5px"}}>
+                🌱 Pemupukan {fertDone ? "✅ Selesai minggu ini" : "(opsional — 1× per minggu)"}
+              </div>
+              {!fertDone ? (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"5px"}}>
+                  {FERTS.map(f => {
+                    const isOpt = f.opt.includes(stage);
+                    const isBad = f.bad.includes(stage);
+                    const burn  = waterCm < 2 && f.id !== "organik";
+                    const wash  = weather?.fertWash && waterCm > 10;
+                    return (
+                      <div key={f.id} onClick={() => doFert(f.id)} title={f.rule}
+                        style={{background:burn||wash?"#fef2f2":isBad?"#fffbeb":isOpt?"#f0fdf4":"#f9fafb",
+                          border:`1.5px solid ${burn||wash?"#fca5a5":isBad?"#fde68a":isOpt?"#86efac":"#e5e7eb"}`,
+                          borderRadius:"8px",padding:"7px 4px",cursor:"pointer",textAlign:"center"}}>
+                        <div style={{fontSize:"13px"}}>{f.em}</div>
+                        <div style={{fontSize:"11px",fontWeight:"700",color:"#374151"}}>{f.name}</div>
+                        <div style={{fontSize:"10px",color:"#6b7280"}}>{fmt(f.cost)}</div>
+                        <div style={{fontSize:"9px",marginTop:"2px",fontWeight:"700",
+                          color:burn?"#dc2626":wash?"#f59e0b":isBad?"#d97706":isOpt?"#16a34a":"#9ca3af"}}>
+                          {burn ? "🔥 Burn!" : wash ? "🌊 Hanyut" : isBad ? "⚠️ Salah" : isOpt ? "✅ Tepat" : "Boleh"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:"7px",padding:"7px 10px",fontSize:"12px",color:"#14532d"}}>
+                  ✅ Pemupukan sudah dilakukan minggu ini
                 </div>
               )}
-            </>}
-          </div>
+            </div>
 
-          {/* ACTIVITY LOG */}
-          <div style={{ margin:"10px 12px 0", background:"#0f172a", borderRadius:"14px", padding:"12px 16px" }}>
-            <div style={{ fontSize:"11px", fontWeight:"600", color:"#64748b", marginBottom:"8px",
-              textTransform:"uppercase", letterSpacing:".6px" }}>Log Aktivitas</div>
-            {log.length === 0
-              ? <div style={{ color:"#475569", fontSize:"13px" }}>Belum ada aktivitas...</div>
-              : log.map(l => (
-                <div key={l.k} style={{ color:logColors[l.t], fontSize:"13px", marginBottom:"3px" }}>{l.msg}</div>
-              ))
-            }
-          </div>
-        </div>
-      );
-    }
+            {/* PREVENTIVE SPRAY — high blast risk */}
+            {!pest && blastRisk > 55 && !sprayDone && (
+              <div style={{marginBottom:"12px"}}>
+                <div style={{fontSize:"12px",fontWeight:"700",
+                  color:stage==="pembungaan"?"#dc2626":"#b45309",marginBottom:"5px"}}>
+                  ⚠️ Blast Risk Tinggi ({Math.round(blastRisk)}%) — Semprot Preventif?
+                  {stage==="pembungaan" && <span style={{color:"#dc2626"}}> 🚨 BERBAHAYA saat bunga!</span>}
+                </div>
+                <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                  {SPRAYS.filter(s => s.type === "fungal").map(sp => (
+                    <Btn key={sp.id} onClick={() => doSpray(sp.id, false)} v={stage==="pembungaan"?"red":"orange"} sm>
+                      {sp.name} ({fmt(sp.cost)})
+                    </Btn>
+                  ))}
+                  <Btn onClick={() => setSprayDone(true)} v="gray" sm>Lewati</Btn>
+                </div>
+              </div>
+            )}
 
-    /* ═══════════════════════════ RENDER ═══════════════════════════ */
-    ReactDOM.createRoot(document.getElementById("root")).render(<FarmSim />);
-  </script>
+            {/* ADVANCE WEEK */}
+            <Btn onClick={doAdvWeek} disabled={!pestOK}
+              v={!pestOK?"gray":week>=12?"amber":"blue"} full>
+              {!pestOK ? "⚠️ Tangani hama terlebih dahulu!" :
+               week >= 12 ? "🌾 Padi Matang — Lanjut ke Fase Panen!" :
+               `⏩ Selesai Minggu ${week} → Lanjut Minggu ${week+1}`}
+            </Btn>
+          </>
+        )}
+
+        {/* ── HARVEST ── */}
+        {phase === "harvest" && (
+          <>
+            <div style={{fontWeight:"700",fontSize:"14px",color:"#92400e",marginBottom:"4px"}}>🌾 Fase Panen</div>
+            <p style={{fontSize:"12px",color:"#6b7280",margin:"0 0 10px"}}>Estimasi hasil: <strong>{estY.toLocaleString()} kg</strong></p>
+
+            {hStep === "timing" && (
+              <>
+                <div style={{background:"#fef9c3",border:"1px solid #fde047",borderRadius:"8px",padding:"10px",marginBottom:"10px",fontSize:"11px",color:"#713f12",lineHeight:"2.0"}}>
+                  <strong>📅 Ilmu Waktu Panen Padi (berdasarkan GR = Grain Ripeness):</strong><br/>
+                  ❌ Sekarang (Mg 12): GR &lt;75% — gabah belum matang, banyak chalk → <strong>−20%</strong><br/>
+                  ✅ Mg 13: GR 80–85% — WAKTU IDEAL, kualitas & kuantitas maksimal<br/>
+                  ⚠️ Mg 14: GR 90% — kerontokan (shattering) mulai terjadi → <strong>−7%</strong><br/>
+                  ❌ Mg 15+: GR &gt;95% — shattering parah + serangan burung → <strong>−18%</strong>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
+                  {[
+                    {w:12, label:"Panen Sekarang (Mg 12)", sub:"Terlalu awal −20%",   col:"#dc2626"},
+                    {w:13, label:"Tunggu Mg 13 (Optimal)", sub:"Waktu ideal! ✅",      col:"#16a34a"},
+                    {w:14, label:"Tunggu Mg 14",           sub:"Shattering mulai −7%", col:"#d97706"},
+                    {w:15, label:"Tunggu Mg 15+",          sub:"Shattering parah −18%",col:"#b45309"},
+                  ].map(opt => (
+                    <button key={opt.w} onClick={() => { setHWeek(opt.w); setHStep("method"); }}
+                      style={{background:opt.col,color:"white",border:"none",borderRadius:"8px",padding:"9px 8px",cursor:"pointer",textAlign:"left"}}>
+                      <div style={{fontSize:"12px",fontWeight:"700"}}>{opt.label}</div>
+                      <div style={{fontSize:"10px",opacity:.85,marginTop:"2px"}}>{opt.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {hStep === "method" && (
+              <>
+                <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:"7px",padding:"8px 10px",marginBottom:"10px",fontSize:"12px",color:"#14532d"}}>
+                  ✅ Waktu dipilih: <strong>Minggu {hWeek}</strong> — pilih metode panen:
+                </div>
+                {[
+                  {id:"manual",  name:"Buruh Tani (Manual)", cost:400_000, eff:.88, desc:"Lebih hemat, efisiensi 88%"},
+                  {id:"combine", name:"Mesin Combine",        cost:700_000, eff:.96, desc:"Cepat & presisi, efisiensi 96%"},
+                ].map(hm => (
+                  <SelCard key={hm.id} onClick={() => doHarvest(hm.id)} border="#fcd34d" bg="#fffbeb" hover="#fef3c7">
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontWeight:"700",color:"#92400e",fontSize:"13px"}}>{hm.name}</span>
+                      <span style={{fontSize:"12px",color:"#6b7280"}}>{fmt(hm.cost)}</span>
+                    </div>
+                    <div style={{fontSize:"11px",color:"#6b7280",marginTop:"2px"}}>
+                      {hm.desc} → ~<strong>{Math.round(estY*hm.eff).toLocaleString()} kg</strong>
+                    </div>
+                  </SelCard>
+                ))}
+                <button onClick={() => setHStep("timing")}
+                  style={{background:"none",border:"none",color:"#6b7280",fontSize:"12px",cursor:"pointer",marginTop:"4px"}}>
+                  ← Ubah pilihan waktu
+                </button>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ── SELLING ── */}
+        {phase === "selling" && (
+          <>
+            <div style={{fontWeight:"700",fontSize:"14px",color:"#14532d",marginBottom:"4px"}}>💰 Jual Hasil Panen</div>
+            <p style={{fontSize:"12px",color:"#6b7280",margin:"0 0 10px"}}>
+              <strong>{harvestKg.toLocaleString()} kg</strong> gabah · Harga pasar: <strong>{fmt(mktPrice)}/kg</strong>
+            </p>
+            {SELL_OPTS.map(so => {
+              const price  = Math.round(mktPrice * so.mod);
+              const rev    = harvestKg * price;
+              const profit = rev - spent;
+              return (
+                <SelCard key={so.id} onClick={() => doSell(so.mod)} border="#c4b5fd" bg="#f5f3ff" hover="#ede9fe">
+                  {so.badge && <span style={{position:"absolute",top:"9px",right:"10px",background:"#16a34a",color:"white",borderRadius:"4px",padding:"2px 6px",fontSize:"10px",fontWeight:"700"}}>{so.badge}</span>}
+                  <div style={{fontWeight:"700",color:"#5b21b6",fontSize:"13px"}}>{so.name}</div>
+                  <div style={{fontSize:"11px",color:"#6b7280"}}>{so.desc} · {fmt(price)}/kg</div>
+                  <div style={{display:"flex",gap:"12px",fontSize:"12px",marginTop:"4px"}}>
+                    <span>Total: <strong>{fmt(rev)}</strong></span>
+                    <span style={{fontWeight:"700",color:profit>0?"#16a34a":"#dc2626"}}>Laba: {profit>0?"+":""}{fmt(profit)}</span>
+                  </div>
+                </SelCard>
+              );
+            })}
+            {history.length > 0 && (
+              <div style={{marginTop:"10px",background:"#f9fafb",borderRadius:"8px",padding:"10px",fontSize:"12px"}}>
+                <strong>📊 Riwayat Musim:</strong>
+                {history.map((h,i) => (
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",marginTop:"4px",paddingTop:"4px",borderTop:"0.5px solid #e5e7eb"}}>
+                    <span>Musim {h.season}: {h.kg.toLocaleString()} kg</span>
+                    <span style={{fontWeight:"700",color:h.profit>0?"#16a34a":"#dc2626"}}>{h.profit>0?"+":""}{fmt(h.profit)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ACTIVITY LOG */}
+      <div style={{margin:"8px 12px 0",background:"#0f172a",borderRadius:"12px",padding:"10px 14px"}}>
+        <div style={{fontSize:"11px",fontWeight:"600",color:"#64748b",marginBottom:"5px",textTransform:"uppercase",letterSpacing:".5px"}}>Log Aktivitas</div>
+        {log.length === 0
+          ? <div style={{color:"#475569",fontSize:"12px"}}>Belum ada aktivitas...</div>
+          : log.map(l => <div key={l.k} style={{color:logC[l.t],fontSize:"12px",marginBottom:"2px"}}>{l.msg}</div>)
+        }
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<FarmSim/>);
+</script>
 </body>
 </html>
